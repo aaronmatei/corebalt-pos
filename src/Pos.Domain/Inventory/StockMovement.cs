@@ -1,0 +1,40 @@
+using Pos.SharedKernel;
+using Pos.SharedKernel.Ids;
+
+namespace Pos.Domain.Inventory;
+
+/// <summary>
+/// INVARIANT #3, applied to inventory: an immutable, append-only stock fact.
+/// Stock-on-hand for a product at a store is the SUM of its movements — never a mutable
+/// "quantity" column. This is precisely what lets many branches (and offline tills)
+/// reconcile to HQ without last-write-wins corrupting counts.
+/// </summary>
+public sealed class StockMovement : Entity, ITenantScoped, IStoreScoped
+{
+    public Guid TenantId { get; private set; }
+    public Guid StoreId { get; private set; }
+    public Guid ProductId { get; private set; }
+    public decimal QuantityDelta { get; private set; } // + receipts, - sales; decimal for weighed goods
+    public StockMovementReason Reason { get; private set; }
+    public Guid? SourceRef { get; private set; }        // e.g. the SaleId that caused the movement
+    public DateTimeOffset OccurredAtUtc { get; private set; }
+
+    private StockMovement() { } // EF
+
+    public static StockMovement Record(Guid tenantId, Guid storeId, Guid productId,
+        decimal quantityDelta, StockMovementReason reason, Guid? sourceRef = null)
+    {
+        if (quantityDelta == 0) throw new ArgumentException("Movement delta cannot be zero.", nameof(quantityDelta));
+        return new StockMovement
+        {
+            Id = Uuid7.NewGuid(),
+            TenantId = tenantId,
+            StoreId = storeId,
+            ProductId = productId,
+            QuantityDelta = quantityDelta,
+            Reason = reason,
+            SourceRef = sourceRef,
+            OccurredAtUtc = DateTimeOffset.UtcNow
+        };
+    }
+}
