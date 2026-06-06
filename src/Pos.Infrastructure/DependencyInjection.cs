@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Pos.Application.Abstractions;
 using Pos.Application.Catalog;
 using Pos.Application.Inventory;
+using Pos.Application.Payments;
 using Pos.Application.Sales;
 using Pos.Infrastructure.Outbox;
 using Pos.Infrastructure.Persistence;
@@ -33,6 +34,7 @@ public static class DependencyInjection
         services.AddScoped<ISaleRepository, SaleRepository>();
         services.AddScoped<IStockMovementRepository, StockMovementRepository>();
         services.AddScoped<IProductRepository, ProductRepository>();
+        services.AddScoped<IMpesaPaymentRepository, MpesaPaymentRepository>();
         services.AddScoped<IOutboxDispatcher, OutboxDispatcher>();
 
         return services;

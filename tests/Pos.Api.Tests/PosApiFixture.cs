@@ -5,8 +5,10 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
 using Pos.Api.Auth;
+using Pos.Application.Payments;
 using Pos.Infrastructure.Persistence;
 using Pos.SharedKernel.Ids;
 using Xunit;
@@ -30,6 +32,9 @@ public sealed class PosApiFixture : IAsyncLifetime
     public WebApplicationFactory<Program> Factory { get; private set; } = default!;
     public string ConnectionString { get; private set; } = string.Empty;
 
+    /// <summary>The in-memory M-Pesa provider backing the test host. Reset it at the start of each test.</summary>
+    public FakeMpesaClient Mpesa => Factory.Services.GetRequiredService<FakeMpesaClient>();
+
     public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
         Converters = { new JsonStringEnumConverter() }
@@ -48,7 +53,17 @@ public sealed class PosApiFixture : IAsyncLifetime
         Environment.SetEnvironmentVariable("POS_DB", ConnectionString);
 
         Factory = new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(b => b.UseEnvironment("Testing"));
+            .WithWebHostBuilder(b =>
+            {
+                b.UseEnvironment("Testing");
+                // Swap the real Daraja client for an in-memory fake so no test hits the network.
+                b.ConfigureServices(services =>
+                {
+                    services.RemoveAll<IMpesaClient>();
+                    services.AddSingleton<FakeMpesaClient>();
+                    services.AddSingleton<IMpesaClient>(sp => sp.GetRequiredService<FakeMpesaClient>());
+                });
+            });
 
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PosDbContext>();

@@ -56,7 +56,9 @@ internal sealed class SaleConfiguration : IEntityTypeConfiguration<Sale>
             tenders.Property(t => t.Id).HasColumnName("id").ValueGeneratedNever();
             tenders.HasKey("sale_id", "Id");
             tenders.Property(t => t.Type).HasColumnName("type").HasConversion<int>();
+            tenders.Property(t => t.Status).HasColumnName("status").HasConversion<int>();
             tenders.Property(t => t.Reference).HasColumnName("reference").HasMaxLength(64);
+            tenders.Property(t => t.ProviderReference).HasColumnName("provider_reference").HasMaxLength(64);
             tenders.OwnsOne(t => t.Amount, m =>
             {
                 m.Property(p => p.Amount).HasColumnName("amount").HasColumnType("numeric(18,2)");

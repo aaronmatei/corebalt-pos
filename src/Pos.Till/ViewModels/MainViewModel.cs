@@ -35,17 +35,30 @@ public partial class MainViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(TenderedTotal), nameof(ChangePreview))]
+    [NotifyCanExecuteChangedFor(nameof(CompleteSaleCommand), nameof(PayWithMpesaCommand))]
     private decimal _cashAmount;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(TenderedTotal), nameof(ChangePreview))]
+    [NotifyCanExecuteChangedFor(nameof(PayWithMpesaCommand))]
     private decimal _mpesaAmount;
 
-    [ObservableProperty] private string _mpesaReference = "";
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(PayWithMpesaCommand))]
+    private string _mpesaPhone = "";
+
+    // Set while an STK push is awaiting the customer's PIN; gates the other actions and shows the
+    // waiting UI. Distinct from IsBusy so the Cancel button stays live during the (long) poll.
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(PayWithMpesaCommand), nameof(CompleteSaleCommand),
+        nameof(CancelMpesaCommand), nameof(RefreshCommand), nameof(LookupBarcodeCommand))]
+    private bool _mpesaInProgress;
 
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private string _statusMessage = "Starting…";
     [ObservableProperty] private string? _lastSaleSummary;
+
+    private CancellationTokenSource? _mpesaCts;
 
     public MainViewModel(IPosApiClient api, TillOptions options)
     {
@@ -103,6 +116,7 @@ public partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(ChangePreview));
         OnPropertyChanged(nameof(ChangePreviewDisplay));
         CompleteSaleCommand.NotifyCanExecuteChanged();
+        PayWithMpesaCommand.NotifyCanExecuteChanged();
     }
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────────────────
@@ -199,27 +213,25 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void ClearSale()
     {
+        _mpesaCts?.Cancel();
         Cart.Clear();
         CashAmount = 0m;
         MpesaAmount = 0m;
-        MpesaReference = "";
+        MpesaPhone = "";
         CancelPending();
         StatusMessage = "Sale cleared.";
     }
 
-    // ── Checkout ──────────────────────────────────────────────────────────────────────────
-    private bool CanComplete() => !IsBusy && Cart.Count > 0;
+    // ── Cash checkout (synchronous) ─────────────────────────────────────────────────────────
+    private bool CanComplete() => !IsBusy && !MpesaInProgress && Cart.Count > 0;
 
     [RelayCommand(CanExecute = nameof(CanComplete))]
     private async Task CompleteSaleAsync()
     {
+        // Cash-only path. M-Pesa is asynchronous and goes through PayWithMpesa, never here.
         var lines = Cart.Select(l => new CheckoutLineDto(l.ProductId, l.Quantity)).ToList();
-
         var tenders = new List<CheckoutTenderDto>();
         if (CashAmount > 0m) tenders.Add(new CheckoutTenderDto(TenderType.Cash, CashAmount, null));
-        if (MpesaAmount > 0m)
-            tenders.Add(new CheckoutTenderDto(TenderType.Mpesa, MpesaAmount,
-                string.IsNullOrWhiteSpace(MpesaReference) ? null : MpesaReference.Trim()));
 
         var request = new CheckoutRequestDto(_options.RegisterId, lines, tenders, _options.Currency);
 
@@ -234,7 +246,7 @@ public partial class MainViewModel : ObservableObject
                     $"✔ Sale {sale.SaleId}\n" +
                     $"   Total  {sale.Currency} {sale.Total:0.00}\n" +
                     $"   Change {sale.Currency} {sale.ChangeDue:0.00}";
-                StatusMessage = "Sale completed.";
+                StatusMessage = "Cash sale completed.";
                 ClearSaleAfterSuccess();
             }
             else
@@ -244,17 +256,109 @@ public partial class MainViewModel : ObservableObject
         });
     }
 
+    // ── M-Pesa checkout (asynchronous STK push → poll) ──────────────────────────────────────
+    private bool CanPayWithMpesa() =>
+        !IsBusy && !MpesaInProgress && Cart.Count > 0 && MpesaAmount > 0m && !string.IsNullOrWhiteSpace(MpesaPhone);
+
+    [RelayCommand(CanExecute = nameof(CanPayWithMpesa))]
+    private async Task PayWithMpesaAsync()
+    {
+        var lines = Cart.Select(l => new CheckoutLineDto(l.ProductId, l.Quantity)).ToList();
+        var cash = new List<CheckoutTenderDto>();
+        if (CashAmount > 0m) cash.Add(new CheckoutTenderDto(TenderType.Cash, CashAmount, null)); // split payment
+
+        var request = new MpesaCheckoutRequestDto(
+            _options.RegisterId, lines, MpesaAmount, MpesaPhone.Trim(),
+            AccountReference: null, CashTenders: cash, Currency: _options.Currency);
+
+        MpesaInProgress = true;
+        StatusMessage = "Sending M-Pesa STK push…";
+        try
+        {
+            var init = await _api.InitiateMpesaAsync(request);
+            if (!init.Ok)
+            {
+                StatusMessage = $"M-Pesa could not start ({init.StatusCode}): {init.Error}";
+                return;
+            }
+            if (!string.Equals(init.Value!.Status, "Pending", StringComparison.OrdinalIgnoreCase))
+            {
+                StatusMessage = $"M-Pesa rejected: {init.Value.Message}. Retry or use cash.";
+                return;
+            }
+
+            StatusMessage = "Waiting for customer to enter M-Pesa PIN…";
+            await PollMpesaAsync(init.Value.SaleId);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Unexpected error: {ex.Message}";
+        }
+        finally
+        {
+            MpesaInProgress = false;
+        }
+    }
+
+    private async Task PollMpesaAsync(Guid saleId)
+    {
+        _mpesaCts?.Dispose();
+        _mpesaCts = new CancellationTokenSource();
+        var ct = _mpesaCts.Token;
+
+        const int maxPolls = 30; // ~60s at 2s intervals
+        for (var i = 0; i < maxPolls; i++)
+        {
+            try { await Task.Delay(TimeSpan.FromSeconds(2), ct); }
+            catch (TaskCanceledException)
+            {
+                StatusMessage = "Stopped waiting. Query again later or switch to cash.";
+                return;
+            }
+
+            var status = await _api.GetMpesaStatusAsync(saleId, ct);
+            if (!status.Ok) { StatusMessage = $"Status check failed: {status.Error}"; continue; }
+
+            var s = status.Value!;
+            switch (s.PaymentStatus)
+            {
+                case "Confirmed":
+                    LastSaleSummary =
+                        $"✔ M-Pesa sale {s.SaleId}\n" +
+                        $"   Total   {s.Currency} {s.Total:0.00}\n" +
+                        $"   Change  {s.Currency} {s.ChangeDue:0.00}\n" +
+                        $"   Receipt {s.Receipt ?? "(pending callback)"}";
+                    StatusMessage = "M-Pesa confirmed — sale completed.";
+                    ClearSaleAfterSuccess();
+                    return;
+                case "Failed":
+                    StatusMessage = $"M-Pesa failed: {s.ResultDescription ?? "cancelled or declined"}. Retry or use cash.";
+                    return;
+                default:
+                    StatusMessage = $"Waiting for customer to enter M-Pesa PIN… ({(i + 1) * 2}s)";
+                    break;
+            }
+        }
+
+        StatusMessage = "M-Pesa timed out. Query again later or switch to cash.";
+    }
+
+    private bool CanCancelMpesa() => MpesaInProgress;
+
+    [RelayCommand(CanExecute = nameof(CanCancelMpesa))]
+    private void CancelMpesa() => _mpesaCts?.Cancel();
+
     private void ClearSaleAfterSuccess()
     {
         Cart.Clear();
         CashAmount = 0m;
         MpesaAmount = 0m;
-        MpesaReference = "";
+        MpesaPhone = "";
         CancelPending();
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────────────────
-    private bool NotBusy() => !IsBusy;
+    private bool NotBusy() => !IsBusy && !MpesaInProgress;
 
     private async Task RunBusy(Func<Task> action)
     {

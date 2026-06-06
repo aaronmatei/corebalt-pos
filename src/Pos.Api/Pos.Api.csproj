@@ -4,6 +4,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>Pos.Api</RootNamespace>
+    <!-- Enables `dotnet user-secrets` for M-Pesa Daraja credentials in Development. -->
+    <UserSecretsId>pos-api-mpesa</UserSecretsId>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Pos.Infrastructure\Pos.Infrastructure.csproj" />

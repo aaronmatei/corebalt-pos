@@ -124,7 +124,10 @@ is the only route that doesn't need them.
 | GET    | `/api/v1/products/by-sku/{sku}`                  |                                                      |
 | GET    | `/api/v1/products/barcode/{barcode}`             | Look up by printed GTIN/EAN-13 scan code             |
 | PUT    | `/api/v1/products/{id}/price`                    | Reprice                                              |
-| POST   | `/api/v1/sales/checkout`                          | **Atomic** start+lines+tenders+complete → 201        |
+| POST   | `/api/v1/sales/checkout`                          | **Atomic** cash start+lines+tenders+complete → 201   |
+| POST   | `/api/v1/sales/mpesa/checkout`                    | Initiate STK push (async); sale stays pending → 202   |
+| GET    | `/api/v1/sales/mpesa/{saleId}/status`             | Poll: reconciles via STK query (Pending/Confirmed/Failed) |
+| POST   | `/mpesa/callback`                                 | Daraja result callback — **no auth**, idempotent     |
 | POST   | `/api/v1/sales`                                  | StartAsync, returns saleId                           |
 | POST   | `/api/v1/sales/{saleId}/lines`                   | Body supplies productId + quantity; price from catalog |
 | POST   | `/api/v1/sales/{saleId}/tenders`                 | Cash / Mpesa / Card / AirtelMoney                    |
@@ -169,6 +172,50 @@ dotnet run --project src/Pos.Till     # launches the till against it
 The scan handler (`Scanning/ScannedCode`) already distinguishes a normal GTIN from a price-embedded
 EAN-13 (number-system digit `2`, the in-store/scale range); decoding its PLU+weight payload arrives
 with the weighed-goods/scales feature (roadmap S2).
+
+## M-Pesa (Daraja STK push) — step 5
+
+M-Pesa is **asynchronous** and is modelled as a pending→confirmed flow, never a synchronous tender:
+
+1. A `Tender` carries a `Status` (Pending / Confirmed / Failed) and a `ProviderReference`
+   (Daraja CheckoutRequestID). Cash is Confirmed on creation; only Confirmed tenders count toward
+   `Paid`, and a sale **cannot complete while any tender is Pending**.
+2. `POST /api/v1/sales/mpesa/checkout` opens the sale, attaches a **pending** M-Pesa tender, fires
+   the STK push, and returns `202` with the `checkoutRequestId` (sale stays Open). Optional
+   `cashTenders` allow a split payment.
+3. The till **polls** `GET /api/v1/sales/mpesa/{saleId}/status`, which runs Daraja's STK *query* and
+   reconciles. On success the tender is Confirmed and — once the basket is fully paid — the sale is
+   finalized (completed + stock movements + outbox), all in one transaction.
+4. `POST /mpesa/callback` is also wired (Daraja's result callback). It's **unauthenticated** (Safaricom
+   can't send our identity headers), **idempotent**, and reconciled strictly by CheckoutRequestID +
+   amount, so a replayed callback can't double-confirm. In dev we confirm by polling (no public URL
+   needed); point `POS_MPESA_CALLBACKURL` at a tunnel if you want live callbacks.
+
+A `MpesaPayment` ledger row (unique on CheckoutRequestID) is the durable reconciliation record.
+
+### Configuring sandbox credentials
+
+Get a sandbox app's **Consumer Key/Secret** and the **Lipa na M-Pesa Online Passkey** from the
+[Daraja portal](https://developer.safaricom.co.ke/). Secrets are **never committed** — supply them via
+.NET user-secrets (dev) or `POS_MPESA_*` environment variables (CI/containers). `POS_MPESA_*` wins.
+
+```bash
+# dev: user-secrets (scoped to Pos.Api)
+dotnet user-secrets --project src/Pos.Api set "Mpesa:ConsumerKey"    "<your-key>"
+dotnet user-secrets --project src/Pos.Api set "Mpesa:ConsumerSecret" "<your-secret>"
+dotnet user-secrets --project src/Pos.Api set "Mpesa:Passkey"        "<your-passkey>"
+# ShortCode defaults to the sandbox test till 174379; BaseUrl to https://sandbox.safaricom.co.ke
+```
+```powershell
+# or environment variables
+$env:POS_MPESA_CONSUMERKEY="<your-key>"; $env:POS_MPESA_CONSUMERSECRET="<your-secret>"
+$env:POS_MPESA_PASSKEY="<your-passkey>"; $env:POS_MPESA_SHORTCODE="174379"
+```
+
+Sandbox STK pushes go to the test MSISDN you request a prompt for (use Safaricom's sandbox test
+number). Without credentials, `mpesa/checkout` fails gracefully (the tender is marked Failed and the
+till offers retry / cash) — cash checkout is unaffected. The test suite uses a fake `IMpesaClient`, so
+`dotnet test` needs **no** credentials and makes **no** network calls.
 
 ## Roadmap (anticipated in design choices)
 - Single-store supermarket: S1 multi-lane foundation, S2 weighed goods + scales, S3 cash office,

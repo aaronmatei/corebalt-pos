@@ -32,6 +32,22 @@ public sealed record CheckoutRequestDto(
 
 public sealed record CompleteSaleDto(Guid SaleId, decimal Total, decimal ChangeDue, string Currency);
 
+// ── M-Pesa (asynchronous) ───────────────────────────────────────────────────────────────────
+public sealed record MpesaCheckoutRequestDto(
+    Guid RegisterId,
+    IReadOnlyList<CheckoutLineDto> Lines,
+    decimal MpesaAmount,
+    string PhoneNumber,
+    string? AccountReference,
+    IReadOnlyList<CheckoutTenderDto>? CashTenders,
+    string Currency);
+
+public sealed record MpesaInitiateDto(Guid SaleId, Guid TenderId, string? CheckoutRequestId, string Status, string? Message);
+
+public sealed record MpesaStatusDto(
+    Guid SaleId, string? CheckoutRequestId, string PaymentStatus, string SaleStatus,
+    string? ResultDescription, string? Receipt, decimal? Total, decimal? ChangeDue, string Currency);
+
 public sealed record SaleLineDto(
     Guid Id, Guid ProductId, string Description, decimal Quantity, MoneyDto UnitPrice, MoneyDto LineTotal);
 

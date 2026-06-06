@@ -20,7 +20,7 @@ internal static class Mapping
             l.Id, l.ProductId, l.Description, l.Quantity,
             l.UnitPrice.ToDto(), l.LineTotal.ToDto())).ToList(),
         s.Tenders.Select(t => new TenderResponse(
-            t.Id, t.Type, t.Amount.ToDto(), t.Reference)).ToList(),
+            t.Id, t.Type, t.Status, t.Amount.ToDto(), t.Reference, t.ProviderReference)).ToList(),
         s.Subtotal.ToDto(),
         s.Paid.ToDto(),
         s.BalanceDue.ToDto(),

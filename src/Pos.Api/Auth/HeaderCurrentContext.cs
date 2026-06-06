@@ -14,18 +14,27 @@ public sealed class HeaderCurrentContext : ICurrentContext
     public const string StoreHeader  = "X-Store-Id";
     public const string UserHeader   = "X-User-Id";
 
-    public Guid TenantId { get; }
-    public Guid StoreId { get; }
-    public Guid UserId { get; }
+    private readonly IHttpContextAccessor _accessor;
+    private (Guid Tenant, Guid Store, Guid User)? _loaded;
 
-    public HeaderCurrentContext(IHttpContextAccessor accessor)
+    public Guid TenantId => Load().Tenant;
+    public Guid StoreId  => Load().Store;
+    public Guid UserId   => Load().User;
+
+    public HeaderCurrentContext(IHttpContextAccessor accessor) => _accessor = accessor;
+
+    // Lazy: the headers are validated on first ACCESS, not at construction. This lets the context
+    // be injected into a service that runs on an unauthenticated route (e.g. the M-Pesa callback,
+    // which carries no identity headers) as long as that path never reads the identity. The
+    // AuthEndpointFilter forces this read for every /api/v1 route so the 401 still fires there.
+    private (Guid Tenant, Guid Store, Guid User) Load()
     {
-        var http = accessor.HttpContext
+        if (_loaded is { } v) return v;
+        var http = _accessor.HttpContext
             ?? throw new InvalidOperationException("HeaderCurrentContext requires an active HTTP request.");
-
-        TenantId = RequireGuid(http, TenantHeader);
-        StoreId  = RequireGuid(http, StoreHeader);
-        UserId   = RequireGuid(http, UserHeader);
+        var loaded = (RequireGuid(http, TenantHeader), RequireGuid(http, StoreHeader), RequireGuid(http, UserHeader));
+        _loaded = loaded;
+        return loaded;
     }
 
     private static Guid RequireGuid(HttpContext http, string name)

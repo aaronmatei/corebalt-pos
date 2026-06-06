@@ -11,6 +11,8 @@ public interface IPosApiClient
     Task<ApiResult<ProductDto>> FindByBarcodeAsync(string barcode, CancellationToken ct = default);
     Task<ApiResult<CompleteSaleDto>> CheckoutAsync(CheckoutRequestDto request, CancellationToken ct = default);
     Task<ApiResult<SaleDto>> GetSaleAsync(Guid saleId, CancellationToken ct = default);
+    Task<ApiResult<MpesaInitiateDto>> InitiateMpesaAsync(MpesaCheckoutRequestDto request, CancellationToken ct = default);
+    Task<ApiResult<MpesaStatusDto>> GetMpesaStatusAsync(Guid saleId, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -50,6 +52,12 @@ public sealed class PosApiClient : IPosApiClient, IDisposable
 
     public Task<ApiResult<SaleDto>> GetSaleAsync(Guid saleId, CancellationToken ct = default) =>
         SendAsync<SaleDto>(() => _http.GetAsync($"{ApiBase}/sales/{saleId}", ct), ct);
+
+    public Task<ApiResult<MpesaInitiateDto>> InitiateMpesaAsync(MpesaCheckoutRequestDto request, CancellationToken ct = default) =>
+        SendAsync<MpesaInitiateDto>(() => _http.PostAsJsonAsync($"{ApiBase}/sales/mpesa/checkout", request, Json, ct), ct);
+
+    public Task<ApiResult<MpesaStatusDto>> GetMpesaStatusAsync(Guid saleId, CancellationToken ct = default) =>
+        SendAsync<MpesaStatusDto>(() => _http.GetAsync($"{ApiBase}/sales/mpesa/{saleId}/status", ct), ct);
 
     private async Task<ApiResult<T>> SendAsync<T>(Func<Task<HttpResponseMessage>> send, CancellationToken ct)
     {

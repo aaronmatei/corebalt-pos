@@ -118,9 +118,9 @@
               <NumericUpDown Grid.Column="1" Grid.Row="1" Value="{Binding MpesaAmount}" Minimum="0"
                              Increment="50" FormatString="0.00" Margin="0,0,0,4"/>
 
-              <TextBlock Grid.Row="2" Text="M-Pesa ref" VerticalAlignment="Center" Margin="0,0,8,0"/>
-              <TextBox Grid.Column="1" Grid.Row="2" Text="{Binding MpesaReference}"
-                       Watermark="e.g. QABC123XYZ"/>
+              <TextBlock Grid.Row="2" Text="Phone" VerticalAlignment="Center" Margin="0,0,8,0"/>
+              <TextBox Grid.Column="1" Grid.Row="2" Text="{Binding MpesaPhone}"
+                       Watermark="07XX XXX XXX (for M-Pesa STK push)"/>
             </Grid>
 
             <Grid ColumnDefinitions="Auto,*">
@@ -129,11 +129,26 @@
             </Grid>
 
             <Grid ColumnDefinitions="*,Auto">
-              <Button Content="Complete sale" HorizontalAlignment="Stretch" Classes="accent"
+              <Button Content="Complete (cash)" HorizontalAlignment="Stretch" Classes="accent"
                       Command="{Binding CompleteSaleCommand}"/>
               <Button Grid.Column="1" Content="Clear" Margin="6,0,0,0"
                       Command="{Binding ClearSaleCommand}"/>
             </Grid>
+
+            <Grid ColumnDefinitions="*,Auto">
+              <Button Content="Pay with M-Pesa" HorizontalAlignment="Stretch"
+                      Command="{Binding PayWithMpesaCommand}"/>
+              <Button Grid.Column="1" Content="Cancel wait" Margin="6,0,0,0"
+                      Command="{Binding CancelMpesaCommand}"/>
+            </Grid>
+
+            <Border IsVisible="{Binding MpesaInProgress}" Background="#FFF4CE" CornerRadius="6" Padding="8">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <ProgressBar IsIndeterminate="True" Width="70" VerticalAlignment="Center"/>
+                <TextBlock Text="Waiting for customer to enter M-Pesa PIN…"
+                           VerticalAlignment="Center" TextWrapping="Wrap"/>
+              </StackPanel>
+            </Border>
 
             <Border IsVisible="{Binding LastSaleSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                     Background="#E3F1DF" CornerRadius="6" Padding="10">

@@ -13,7 +13,10 @@ internal sealed class AuthEndpointFilter : IEndpointFilter
 {
     public ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
-        _ = context.HttpContext.RequestServices.GetRequiredService<ICurrentContext>();
+        // Touch the identity so a route that doesn't inject ICurrentContext still gets the header
+        // check. Reading TenantId forces HeaderCurrentContext to validate all three headers (it
+        // loads them lazily now), throwing MissingContextHeaderException → 401 when absent/invalid.
+        _ = context.HttpContext.RequestServices.GetRequiredService<ICurrentContext>().TenantId;
         return next(context);
     }
 }

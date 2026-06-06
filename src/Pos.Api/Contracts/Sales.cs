@@ -28,7 +28,7 @@ public sealed record SaleLineResponse(
     MoneyDto UnitPrice,
     MoneyDto LineTotal);
 
-public sealed record TenderResponse(Guid Id, TenderType Type, MoneyDto Amount, string? Reference);
+public sealed record TenderResponse(Guid Id, TenderType Type, TenderStatus Status, MoneyDto Amount, string? Reference, string? ProviderReference);
 
 public sealed record SaleResponse(
     Guid Id,

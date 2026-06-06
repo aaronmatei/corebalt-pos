@@ -26,10 +26,12 @@ Offline-first: a till/branch must keep selling when the network drops.
 
 ## Layout
 - `src/Pos.SharedKernel` — Entity, AggregateRoot, ValueObject, Money, Uuid7, invariant interfaces
-- `src/Pos.Domain` — Sales (Sale/SaleLine/Tender), Inventory (StockMovement), Catalog (Product)
-- `src/Pos.Application` — ports (repositories, IUnitOfWork, IClock) + `CheckoutService` use case
-- `src/Pos.Infrastructure` — PosDbContext, EF configurations, repositories, outbox interceptor, DI;
-  `Persistence/Migrations` holds the EF migration (`InitialCreate`) + model snapshot
+- `src/Pos.Domain` — Sales (Sale/SaleLine/Tender), Inventory (StockMovement), Catalog (Product),
+  Payments (MpesaPayment — the M-Pesa reconciliation ledger)
+- `src/Pos.Application` — ports (repositories, IUnitOfWork, IClock, **IMpesaClient**) + use cases
+  `CheckoutService` (cash) and `MpesaPaymentService` (async M-Pesa: initiate/query/callback)
+- `src/Pos.Infrastructure` — PosDbContext, EF configurations, repositories, outbox interceptor,
+  **DarajaMpesaClient** (Mpesa/), DI; `Persistence/Migrations` holds the EF migrations + model snapshot
 - `src/Pos.Api` — ASP.NET Core 10 minimal-API store-server host: catalog + checkout + inventory over
   HTTP. Thin endpoints delegating to `CheckoutService`; header-based identity (`Auth/`)
 - `src/Pos.Till` — Avalonia (.NET 10, MVVM/CommunityToolkit) desktop till. A **pure HTTP client**
@@ -49,16 +51,27 @@ dotnet ef database update --project src/Pos.Infrastructure --startup-project sam
 dotnet run  --project samples/Pos.Persistence.Demo   # save→reload a sale, print the outbox row
 dotnet run  --project src/Pos.Api                    # store-server host on http://localhost:5080; OpenAPI at /openapi/v1.json
 dotnet run  --project src/Pos.Till                   # Avalonia till (pure API client); talks to :5080
-dotnet test                                          # domain + API integration tests (28)
+dotnet test                                          # domain + API integration tests (43)
 ```
+M-Pesa (Daraja) secrets are read from the `Mpesa` config section / user-secrets / `POS_MPESA_*` env
+(see README). Without them, M-Pesa initiate fails gracefully (tender → Failed); cash is unaffected.
 Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Database=pos;Username=postgres;Password=pos`).
 `Pos.Api.Tests` uses `POS_TEST_DB` (default same as above but `Database=pos_test`); the `pos_test` DB is created on first run if absent.
 
 ## Current state & immediate task
 - **Done:** step 1 (domain core + invariants), step 2 (Catalog, Application, EF Core/Postgres
   persistence + transactional outbox, `InitialCreate` migration), step 3 (`Pos.Api`
-  store-server host + `Pos.Api.Tests` integration tests), and step 4 (`Pos.Till` Avalonia client).
-  All six projects target `net10.0`; `dotnet test` is green at 28 (16 domain + 12 API).
+  store-server host + `Pos.Api.Tests` integration tests), step 4 (`Pos.Till` Avalonia client), and
+  step 5 (real M-Pesa via Daraja STK push, as an async pending→confirmed flow).
+  All six projects target `net10.0`; `dotnet test` is green at 43 (25 domain + 18 API).
+- **M-Pesa (async, NEVER faked as synchronous):** a `Tender` has a `Status` (Pending/Confirmed/Failed)
+  + `ProviderReference`; cash is Confirmed on creation; `Paid` counts only Confirmed tenders and
+  `Sale.Complete()` refuses while any tender is Pending. STK flow: `POST /api/v1/sales/mpesa/checkout`
+  (opens the sale + pending tender + STK push → 202), `GET /api/v1/sales/mpesa/{saleId}/status`
+  (till polls; reconciles via STK query), `POST /mpesa/callback` (unauthenticated, idempotent,
+  reconciled by CheckoutRequestID + amount). The sale finalizes (complete + stock movements + outbox)
+  only when the pending tender confirms. Daraja secrets come from user-secrets / `POS_MPESA_*` env —
+  never hardcoded; tests use a fake `IMpesaClient` (no network). See README "M-Pesa (Daraja)".
 - **Catalog/checkout endpoints (`/api/v1`):** `GET /products` (list), `GET /products/{id}`,
   `GET /products/by-sku/{sku}`, `GET /products/barcode/{barcode}`, `POST /products`,
   `PUT /products/{id}/price`; `POST /sales/checkout` (atomic one-shot: start+lines+tenders+complete
