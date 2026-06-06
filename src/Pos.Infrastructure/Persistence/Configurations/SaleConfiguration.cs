@@ -28,12 +28,15 @@ internal sealed class SaleConfiguration : IEntityTypeConfiguration<Sale>
         // Lines and tenders are part of the Sale aggregate; they live and die with it.
         // Bind to the private backing fields; the public IReadOnly* projections are ignored
         // below so EF doesn't try to materialize them as duplicate navigations.
+        // Owned collections use a composite key (sale_id, id) — that's the canonical EF Core
+        // shape for owned-many. Overriding it to a single-column PK on Id makes the change
+        // tracker stage new rows as Modified instead of Added (we hit that on first run).
         b.OwnsMany<SaleLine>("_lines", lines =>
         {
             lines.ToTable("sale_lines");
             lines.WithOwner().HasForeignKey("sale_id");
-            lines.HasKey(l => l.Id);
-            lines.Property(l => l.Id).HasColumnName("id");
+            lines.Property(l => l.Id).HasColumnName("id").ValueGeneratedNever();
+            lines.HasKey("sale_id", "Id");
             lines.Property(l => l.ProductId).HasColumnName("product_id").IsRequired();
             lines.Property(l => l.Description).HasColumnName("description").HasMaxLength(200).IsRequired();
             lines.Property(l => l.Quantity).HasColumnName("quantity").HasColumnType("numeric(18,3)");
@@ -50,8 +53,8 @@ internal sealed class SaleConfiguration : IEntityTypeConfiguration<Sale>
         {
             tenders.ToTable("tenders");
             tenders.WithOwner().HasForeignKey("sale_id");
-            tenders.HasKey(t => t.Id);
-            tenders.Property(t => t.Id).HasColumnName("id");
+            tenders.Property(t => t.Id).HasColumnName("id").ValueGeneratedNever();
+            tenders.HasKey("sale_id", "Id");
             tenders.Property(t => t.Type).HasColumnName("type").HasConversion<int>();
             tenders.Property(t => t.Reference).HasColumnName("reference").HasMaxLength(64);
             tenders.OwnsOne(t => t.Amount, m =>

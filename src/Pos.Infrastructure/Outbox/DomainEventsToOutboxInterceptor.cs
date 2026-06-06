@@ -12,13 +12,13 @@ namespace Pos.Infrastructure.Outbox;
 /// DbContext as the aggregate change, EF flushes them in one transaction — there is no
 /// "saved but never published" window for the HQ sync to lose.
 /// </summary>
-internal sealed class DomainEventToOutboxInterceptor : SaveChangesInterceptor
+internal sealed class DomainEventsToOutboxInterceptor : SaveChangesInterceptor
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly IClock _clock;
 
-    public DomainEventToOutboxInterceptor(IClock clock) => _clock = clock;
+    public DomainEventsToOutboxInterceptor(IClock clock) => _clock = clock;
 
     public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
         DbContextEventData eventData, InterceptionResult<int> result, CancellationToken ct = default)
