@@ -5,6 +5,8 @@ namespace Pos.Till.Api;
 // the server assemblies. Enums mirror the server's names; the API serializes them as strings,
 // so a JsonStringEnumConverter (configured in PosApiClient) keeps both ends in sync by name.
 
+public sealed record TokenDto(string AccessToken, DateTimeOffset ExpiresAtUtc, string TokenType);
+
 public enum UnitOfMeasure { Each = 0, Kg = 1 }
 
 public enum TenderType { Cash = 0, Mpesa = 1, Card = 2, AirtelMoney = 3 }

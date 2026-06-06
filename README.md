@@ -103,23 +103,32 @@ dotnet run --project src/Pos.Api
 # OpenAPI document at: http://localhost:5xxx/openapi/v1.json
 ```
 
-### Identity
-Every business endpoint requires three trusted headers — this is the step-3
-stand-in for the chain/SaaS-tier JWT bearer (kept curlable for now):
+### Identity & authentication (step 9)
+Lightweight custom identity — own `User` aggregate + JWT, **not** ASP.NET Core Identity.
+Sign in for a token, then send it as `Authorization: Bearer <jwt>` on every call:
 
-| Header        | Type | Source of truth (later)                  |
-|---------------|------|------------------------------------------|
-| `X-Tenant-Id` | UUID | JWT claim `tenant`                       |
-| `X-Store-Id`  | UUID | JWT claim `store` (this branch)          |
-| `X-User-Id`   | UUID | JWT claim `sub` (the cashier)            |
+- `POST /api/v1/auth/pin-login` `{ staffCode, pin }` → JWT (fast till login)
+- `POST /api/v1/auth/login` `{ username, password }` → JWT (back office)
 
-Missing or non-UUID values → `401 Unauthorized` (`ProblemDetails`). `GET /healthz`
-is the only route that doesn't need them.
+The JWT carries tenant/store/user/role/name/staff-code, signed with a local store-server HMAC key
+(`Jwt:Key`, works offline on the LAN). PINs/passwords are stored only as PBKDF2 hashes. **Role
+policies:** Manager for back-office product/stock writes; Cashier+ (any authenticated) for checkout.
+A bootstrap Manager is seeded on first run (`Auth:Bootstrap`, forced password change). `GET /healthz`
+and the M-Pesa callback are the only anonymous routes.
+
+**Dev bypass** (`Auth:AllowDevHeaders=true`, off by default, never in Production): send
+`X-Tenant-Id`/`X-Store-Id`/`X-User-Id` (UUIDs) and the API treats you as a Manager in that scope —
+keeps the surface curlable and the tests simple. In Development a demo cashier is seeded for the till
+(staff code `1001`, PIN `1234`).
 
 ### Endpoints
 
 | Method | Path                                             | Notes                                                |
 |--------|--------------------------------------------------|------------------------------------------------------|
+| POST   | `/api/v1/auth/pin-login`                         | StaffCode + PIN → JWT (anonymous)                    |
+| POST   | `/api/v1/auth/login`                             | Username + password → JWT (anonymous)                |
+| POST   | `/api/v1/auth/change-password`                   | Change own password (clears forced change)           |
+| POST   | `/api/v1/users`                                  | Create staff (Manager only)                          |
 | GET    | `/api/v1/products`                               | List catalogue (active only; `?includeInactive=true`) |
 | POST   | `/api/v1/products`                               | Create (SKU unique; barcode unique when present)     |
 | PUT    | `/api/v1/products/{id}`                          | Update name/barcode/unit/tax-class/active            |

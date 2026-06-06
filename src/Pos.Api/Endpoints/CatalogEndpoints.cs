@@ -12,9 +12,10 @@ internal static class CatalogEndpoints
 {
     public static IEndpointRouteBuilder MapCatalog(this IEndpointRouteBuilder app)
     {
-        var g = app.MapGroup("/products").WithTags("Catalog");
+        var g = app.MapGroup("/products").WithTags("Catalog");                          // reads: any authenticated user
+        var mgr = app.MapGroup("/products").WithTags("Catalog").RequireAuthorization("Manager"); // writes: Manager only
 
-        g.MapPost("/", async (
+        mgr.MapPost("/", async (
             CreateProductRequest req,
             ICurrentContext ctx,
             IProductRepository products,
@@ -81,7 +82,7 @@ internal static class CatalogEndpoints
             return product is null ? Results.NotFound() : Results.Ok(product.ToResponse());
         });
 
-        g.MapPut("/{id:guid}", async (
+        mgr.MapPut("/{id:guid}", async (
             Guid id,
             UpdateProductRequest req,
             ICurrentContext ctx,
@@ -104,7 +105,7 @@ internal static class CatalogEndpoints
             return Results.Ok(product.ToResponse());
         });
 
-        g.MapPost("/{id:guid}/deactivate", async (
+        mgr.MapPost("/{id:guid}/deactivate", async (
             Guid id,
             ICurrentContext ctx,
             IProductRepository products,
@@ -118,7 +119,7 @@ internal static class CatalogEndpoints
             return Results.Ok(product.ToResponse());
         });
 
-        g.MapPut("/{id:guid}/price", async (
+        mgr.MapPut("/{id:guid}/price", async (
             Guid id,
             RepriceProductRequest req,
             ICurrentContext ctx,

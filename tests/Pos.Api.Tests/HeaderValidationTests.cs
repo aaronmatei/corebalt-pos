@@ -13,8 +13,8 @@ public sealed class HeaderValidationTests(PosApiFixture fx)
     public async Task Missing_tenant_header_returns_401()
     {
         var client = fx.Factory.CreateClient();
-        client.DefaultRequestHeaders.Add(HeaderCurrentContext.StoreHeader, Uuid7.NewGuid().ToString());
-        client.DefaultRequestHeaders.Add(HeaderCurrentContext.UserHeader,  Uuid7.NewGuid().ToString());
+        client.DefaultRequestHeaders.Add(DevHeaderAuthMiddleware.StoreHeader, Uuid7.NewGuid().ToString());
+        client.DefaultRequestHeaders.Add(DevHeaderAuthMiddleware.UserHeader,  Uuid7.NewGuid().ToString());
 
         var resp = await client.GetAsync($"/api/v1/products/{Guid.NewGuid()}");
         resp.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
@@ -24,9 +24,9 @@ public sealed class HeaderValidationTests(PosApiFixture fx)
     public async Task Garbage_tenant_header_returns_401()
     {
         var client = fx.Factory.CreateClient();
-        client.DefaultRequestHeaders.Add(HeaderCurrentContext.TenantHeader, "not-a-guid");
-        client.DefaultRequestHeaders.Add(HeaderCurrentContext.StoreHeader,  Uuid7.NewGuid().ToString());
-        client.DefaultRequestHeaders.Add(HeaderCurrentContext.UserHeader,   Uuid7.NewGuid().ToString());
+        client.DefaultRequestHeaders.Add(DevHeaderAuthMiddleware.TenantHeader, "not-a-guid");
+        client.DefaultRequestHeaders.Add(DevHeaderAuthMiddleware.StoreHeader,  Uuid7.NewGuid().ToString());
+        client.DefaultRequestHeaders.Add(DevHeaderAuthMiddleware.UserHeader,   Uuid7.NewGuid().ToString());
 
         var resp = await client.GetAsync($"/api/v1/products/{Guid.NewGuid()}");
         resp.StatusCode.Should().Be(HttpStatusCode.Unauthorized);

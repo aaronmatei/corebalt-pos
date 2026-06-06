@@ -59,6 +59,19 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string? _lastSaleSummary;
     [ObservableProperty] private string? _receiptText;
 
+    /// <summary>The signed-in cashier (staff code), shown in the header.</summary>
+    [ObservableProperty] private string _cashierLabel = "";
+
+    /// <summary>Raised by "Lock / switch cashier" — the shell returns to the login screen.</summary>
+    public event Action? LockRequested;
+
+    [RelayCommand]
+    private void Lock()
+    {
+        _mpesaCts?.Cancel();
+        LockRequested?.Invoke();
+    }
+
     private CancellationTokenSource? _mpesaCts;
 
     public MainViewModel(IPosApiClient api, TillOptions options)

@@ -21,6 +21,10 @@ public sealed class Sale : AggregateRoot, ITenantScoped, IStoreScoped, IAuditabl
     public Guid StoreId { get; private set; }     // the branch that owns this sale
     public Guid RegisterId { get; private set; }  // the lane / till
     public Guid CashierId { get; private set; }
+    // Cashier name + staff code captured at sale time (immutable fact for the receipt — the user may
+    // be renamed later; the receipt must show who actually rang it up).
+    public string CashierName { get; private set; } = string.Empty;
+    public string CashierStaffCode { get; private set; } = string.Empty;
     public SaleStatus Status { get; private set; }
     public string Currency { get; private set; }
 
@@ -97,13 +101,16 @@ public sealed class Sale : AggregateRoot, ITenantScoped, IStoreScoped, IAuditabl
 
     private Sale() { Currency = "KES"; } // EF
 
-    public static Sale Start(Guid tenantId, Guid storeId, Guid registerId, Guid cashierId, string currency = "KES") => new()
+    public static Sale Start(Guid tenantId, Guid storeId, Guid registerId, Guid cashierId,
+        string currency = "KES", string cashierName = "", string cashierStaffCode = "") => new()
     {
         Id = Uuid7.NewGuid(),
         TenantId = tenantId,
         StoreId = storeId,
         RegisterId = registerId,
         CashierId = cashierId,
+        CashierName = cashierName,
+        CashierStaffCode = cashierStaffCode,
         Status = SaleStatus.Open,
         Currency = currency,
         CreatedAtUtc = DateTimeOffset.UtcNow,

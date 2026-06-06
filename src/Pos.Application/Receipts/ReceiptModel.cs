@@ -32,7 +32,11 @@ public sealed record ReceiptModel(
             ReceiptNo: sale.ReceiptNumber ?? sale.Id.ToString(), // human number; falls back to id pre-completion
             Ref: sale.Id.ToString(),                              // internal UUIDv7 — kept for support lookups
             DateTimeEat: Eat(sale.CompletedAtUtc) ?? "",
-            Cashier: Short(sale.CashierId),
+            // Real cashier name + staff code captured at sale time; fall back to the short id if absent
+            // (e.g. legacy sales rung before authentication existed).
+            Cashier: string.IsNullOrWhiteSpace(sale.CashierName)
+                ? Short(sale.CashierId)
+                : $"{sale.CashierName} ({sale.CashierStaffCode})",
             Register: Short(sale.RegisterId),
             Branch: store.BranchName);
 

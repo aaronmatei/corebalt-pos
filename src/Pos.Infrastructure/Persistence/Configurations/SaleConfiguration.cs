@@ -17,6 +17,8 @@ internal sealed class SaleConfiguration : IEntityTypeConfiguration<Sale>
         b.Property(s => s.StoreId).HasColumnName("store_id").IsRequired();
         b.Property(s => s.RegisterId).HasColumnName("register_id").IsRequired();
         b.Property(s => s.CashierId).HasColumnName("cashier_id").IsRequired();
+        b.Property(s => s.CashierName).HasColumnName("cashier_name").HasMaxLength(128).HasDefaultValue("");
+        b.Property(s => s.CashierStaffCode).HasColumnName("cashier_staff_code").HasMaxLength(32).HasDefaultValue("");
         b.Property(s => s.Status).HasColumnName("status").HasConversion<int>();
         b.Property(s => s.Currency).HasColumnName("currency").HasMaxLength(3).IsRequired();
         b.Property(s => s.ReceiptNumber).HasColumnName("receipt_number").HasMaxLength(32);

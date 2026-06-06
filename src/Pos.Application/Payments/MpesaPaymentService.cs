@@ -61,7 +61,7 @@ public sealed class MpesaPaymentService
         if (string.IsNullOrWhiteSpace(phoneNumber))
             throw new ArgumentException("A phone number is required for M-Pesa.", nameof(phoneNumber));
 
-        var sale = Sale.Start(_ctx.TenantId, _ctx.StoreId, registerId, _ctx.UserId, currency);
+        var sale = Sale.Start(_ctx.TenantId, _ctx.StoreId, registerId, _ctx.UserId, currency, _ctx.UserName, _ctx.StaffCode);
 
         foreach (var l in lines)
         {

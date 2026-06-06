@@ -2,9 +2,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Pos.Application.Abstractions;
 using Pos.Application.Catalog;
+using Pos.Application.Identity;
 using Pos.Application.Inventory;
 using Pos.Application.Payments;
 using Pos.Application.Sales;
+using Pos.Infrastructure.Identity;
 using Pos.Infrastructure.Outbox;
 using Pos.Infrastructure.Persistence;
 using Pos.Infrastructure.Persistence.Repositories;
@@ -37,6 +39,11 @@ public static class DependencyInjection
         services.AddScoped<IMpesaPaymentRepository, MpesaPaymentRepository>();
         services.AddScoped<IReceiptNumberSequence, ReceiptNumberSequence>();
         services.AddScoped<IOutboxDispatcher, OutboxDispatcher>();
+
+        // Lightweight identity: password hashing + user persistence (JWT issuer is wired in the host,
+        // which owns the signing key config).
+        services.AddScoped<IUserRepository, UserRepository>();
+        services.AddSingleton<IPasswordHasher, AspNetPasswordHasher>();
 
         return services;
     }

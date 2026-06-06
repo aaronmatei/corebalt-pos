@@ -56,6 +56,8 @@ public sealed class PosApiFixture : IAsyncLifetime
             .WithWebHostBuilder(b =>
             {
                 b.UseEnvironment("Testing");
+                // Tests authenticate via the dev-header bypass (X-Tenant/Store/User → a Manager principal).
+                b.UseSetting("Auth:AllowDevHeaders", "true");
                 // Swap the real Daraja client for an in-memory fake so no test hits the network.
                 b.ConfigureServices(services =>
                 {
@@ -85,9 +87,9 @@ public sealed class PosApiFixture : IAsyncLifetime
         var store  = Uuid7.NewGuid();
         var user   = Uuid7.NewGuid();
         var client = Factory.CreateClient();
-        client.DefaultRequestHeaders.Add(HeaderCurrentContext.TenantHeader, tenant.ToString());
-        client.DefaultRequestHeaders.Add(HeaderCurrentContext.StoreHeader,  store.ToString());
-        client.DefaultRequestHeaders.Add(HeaderCurrentContext.UserHeader,   user.ToString());
+        client.DefaultRequestHeaders.Add(DevHeaderAuthMiddleware.TenantHeader, tenant.ToString());
+        client.DefaultRequestHeaders.Add(DevHeaderAuthMiddleware.StoreHeader,  store.ToString());
+        client.DefaultRequestHeaders.Add(DevHeaderAuthMiddleware.UserHeader,   user.ToString());
         client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         return (client, tenant, store, user);
     }

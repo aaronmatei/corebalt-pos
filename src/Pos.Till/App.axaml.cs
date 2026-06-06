@@ -26,11 +26,9 @@ public partial class App : Application
 
             var options = config.GetSection("Till").Get<TillOptions>() ?? new TillOptions();
             var api = new PosApiClient(options);
-            var vm = new MainViewModel(api, options);
+            var shell = new ShellViewModel(api, options); // starts on the PIN login screen
 
-            var window = new MainWindow { DataContext = vm };
-            window.Opened += async (_, _) => await vm.InitializeAsync();
-            desktop.MainWindow = window;
+            desktop.MainWindow = new MainWindow { DataContext = shell };
             desktop.Exit += (_, _) => api.Dispose();
         }
 

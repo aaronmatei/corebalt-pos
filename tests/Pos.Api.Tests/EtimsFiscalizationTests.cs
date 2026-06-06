@@ -103,9 +103,9 @@ public sealed class EtimsFiscalizationTests(PosApiFixture fx)
 
     private static HttpClient WithHeaders(HttpClient client)
     {
-        client.DefaultRequestHeaders.Add(HeaderCurrentContext.TenantHeader, Uuid7.NewGuid().ToString());
-        client.DefaultRequestHeaders.Add(HeaderCurrentContext.StoreHeader, Uuid7.NewGuid().ToString());
-        client.DefaultRequestHeaders.Add(HeaderCurrentContext.UserHeader, Uuid7.NewGuid().ToString());
+        client.DefaultRequestHeaders.Add(DevHeaderAuthMiddleware.TenantHeader, Uuid7.NewGuid().ToString());
+        client.DefaultRequestHeaders.Add(DevHeaderAuthMiddleware.StoreHeader, Uuid7.NewGuid().ToString());
+        client.DefaultRequestHeaders.Add(DevHeaderAuthMiddleware.UserHeader, Uuid7.NewGuid().ToString());
         client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         return client;
     }

@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Pos.Api.Auth;
 
 namespace Pos.Api.Errors;
 
@@ -17,7 +16,6 @@ internal sealed class DomainExceptionHandler : IExceptionHandler
     {
         var (status, title, detail) = ex switch
         {
-            MissingContextHeaderException => (StatusCodes.Status401Unauthorized, "Missing identity header", ex.Message),
             ArgumentOutOfRangeException   => (StatusCodes.Status400BadRequest,   "Invalid argument", ex.Message),
             ArgumentException             => (StatusCodes.Status400BadRequest,   "Invalid argument", ex.Message),
             InvalidOperationException     => (StatusCodes.Status409Conflict,     "Domain rule violation", ex.Message),

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Pos.Application.Abstractions;
 using Pos.Domain.Catalog;
+using Pos.Domain.Identity;
 using Pos.Domain.Inventory;
 using Pos.Domain.Payments;
 using Pos.Domain.Sales;
@@ -16,6 +17,7 @@ public sealed class PosDbContext : DbContext, IUnitOfWork
     public DbSet<Product> Products => Set<Product>();
     public DbSet<StockMovement> StockMovements => Set<StockMovement>();
     public DbSet<MpesaPayment> MpesaPayments => Set<MpesaPayment>();
+    public DbSet<User> Users => Set<User>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

@@ -12,7 +12,8 @@ internal static class InventoryEndpoints
 {
     public static IEndpointRouteBuilder MapInventory(this IEndpointRouteBuilder app)
     {
-        var g = app.MapGroup("/inventory").WithTags("Inventory");
+        var g = app.MapGroup("/inventory").WithTags("Inventory");                          // reads: any authenticated user
+        var mgr = app.MapGroup("/inventory").WithTags("Inventory").RequireAuthorization("Manager"); // stock ops + report: Manager
 
         // On-hand for one product — always the SUM of immutable movements, never a stored column.
         g.MapGet("/{productId:guid}/on-hand", async (
@@ -26,7 +27,7 @@ internal static class InventoryEndpoints
         });
 
         // Stock report for the store: every product with its derived on-hand.
-        g.MapGet("/report", async (
+        mgr.MapGet("/report", async (
             ICurrentContext ctx,
             IProductRepository products,
             IStockMovementRepository stock,
@@ -41,7 +42,7 @@ internal static class InventoryEndpoints
         });
 
         // Receive stock IN: a positive quantity, one immutable movement (Purchase/OpeningBalance/Adjustment).
-        g.MapPost("/receive", async (
+        mgr.MapPost("/receive", async (
             ReceiveStockRequest req,
             ICurrentContext ctx,
             IProductRepository products,
@@ -66,7 +67,7 @@ internal static class InventoryEndpoints
         });
 
         // Adjust stock: a SIGNED quantity (stock take / shrinkage), one immutable movement — never an edit.
-        g.MapPost("/adjust", async (
+        mgr.MapPost("/adjust", async (
             AdjustStockRequest req,
             ICurrentContext ctx,
             IProductRepository products,

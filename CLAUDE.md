@@ -27,18 +27,20 @@ Offline-first: a till/branch must keep selling when the network drops.
 ## Layout
 - `src/Pos.SharedKernel` — Entity, AggregateRoot, ValueObject, Money, Uuid7, invariant interfaces
 - `src/Pos.Domain` — Sales (Sale/SaleLine/Tender), Inventory (StockMovement), Catalog (Product),
-  Payments (MpesaPayment — the M-Pesa reconciliation ledger)
-- `src/Pos.Application` — ports (repositories, IUnitOfWork, IClock, **IMpesaClient**) + use cases
-  `CheckoutService` (cash) and `MpesaPaymentService` (async M-Pesa: initiate/query/callback);
-  `Receipts/` (ReceiptModel projection + renderers); `Fiscalization/` (IFiscalizationProvider,
-  FiscalizationService, FiscalSyncService, EtimsOptions)
+  Payments (MpesaPayment — the M-Pesa reconciliation ledger), Identity (User/UserRole)
+- `src/Pos.Application` — ports (repositories, IUnitOfWork, IClock, **IMpesaClient**, IPasswordHasher,
+  ITokenIssuer, IUserRepository) + use cases `CheckoutService`, `MpesaPaymentService`, `AuthService`;
+  `Receipts/` (ReceiptModel projection + renderers); `Fiscalization/`; `Identity/` (AuthService,
+  StoreServerOptions, PosClaims)
 - `src/Pos.Infrastructure` — PosDbContext, EF configurations, repositories, outbox interceptor,
-  **DarajaMpesaClient** (Mpesa/), **FakeEtimsProvider** (Fiscalization/), DI; `Persistence/Migrations`
-- `src/Pos.Api` — ASP.NET Core 10 minimal-API store-server host: catalog + checkout + inventory over
-  HTTP. Thin endpoints delegating to `CheckoutService`; header-based identity (`Auth/`)
+  **DarajaMpesaClient** (Mpesa/), **FakeEtimsProvider** (Fiscalization/), **JwtTokenIssuer +
+  AspNetPasswordHasher** (Identity/), DI; `Persistence/Migrations`
+- `src/Pos.Api` — ASP.NET Core 10 minimal-API store-server host: auth + catalog + checkout + inventory
+  over HTTP. Thin endpoints; JWT bearer auth + role policies + dev-header bypass (`Auth/`)
 - `src/Pos.Till` — Avalonia (.NET 10, MVVM/CommunityToolkit) desktop till. A **pure HTTP client**
   of `Pos.Api`: it references no domain/application/infrastructure assembly and owns its own wire
-  DTOs. Single till screen (catalogue + barcode scan + cart + cash/M-Pesa tender + checkout)
+  DTOs. PIN login screen → JWT held for the session; till screen (catalogue + scan + cart + tender +
+  checkout); "Lock / switch cashier" returns to login. Shell swaps Login↔Till via a ContentControl
 - `samples/Pos.Smoke` — domain-only console (no infrastructure)
 - `samples/Pos.Persistence.Demo` — saves a sale to Postgres, reloads it, prints the outbox
 - `tests/Pos.Domain.Tests` — xUnit invariant tests (UUIDv7, store/tenant scoping, append-only, Money)
@@ -54,7 +56,7 @@ dotnet ef database update --project src/Pos.Infrastructure --startup-project sam
 dotnet run  --project samples/Pos.Persistence.Demo   # save→reload a sale, print the outbox row
 dotnet run  --project src/Pos.Api                    # store-server host on http://localhost:5080; auto-applies migrations in Development
 dotnet run  --project src/Pos.Till                   # Avalonia till (pure API client); talks to :5080
-dotnet test                                          # domain + API integration tests (63)
+dotnet test                                          # domain + API integration tests (66)
 ```
 Receipt header comes from the `Store` config section (LegalName/KraPin/BranchName/BranchAddress/
 Phone/VatNumber/Currency) — config-swappable, defaults to Corebalt Technologies.
@@ -71,8 +73,9 @@ Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Databa
   store-server host + `Pos.Api.Tests` integration tests), step 4 (`Pos.Till` Avalonia client), and
   step 5 (real M-Pesa via Daraja STK push, as an async pending→confirmed flow), and step 6
   (fiscal receipt incl. human receipt numbers), step 7 (eTIMS fiscalization SEAM — eTIMS-ready,
-  NOT real fiscalization), and step 8 (back-office data core: product/price management + stock
-  receiving). All six projects target `net10.0`; `dotnet test` is green at 63 (29 domain + 34 API).
+  NOT real fiscalization), step 8 (back-office data core: product/price management + stock
+  receiving), and step 9 (authentication & identity: custom User aggregate + JWT, role policies,
+  till PIN login). All six projects target `net10.0`; `dotnet test` is green at 66 (29 domain + 37 API).
 - **eTIMS seam (mirrors the M-Pesa provider pattern):** `IFiscalizationProvider.SignAsync/SyncAsync`
   with `FakeEtimsProvider` (training mode — deterministic "TEST-…" CUIN from the receipt number, fake
   signature, KRA-shaped QR URL; SyncAsync a logged no-op). Config "Etims": Enabled, Mode (Vscu/Oscu),
@@ -122,11 +125,20 @@ Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Databa
   (`AddProductBarcode` migration). The till's scan handler (`Scanning/ScannedCode`) already
   classifies price-embedded EAN-13 (number-system digit `2`) so weighed-goods PLU+weight decoding
   can slot in with the scales feature (roadmap S2) without changing the contract.
-- **API identity (step-3 stand-in for the chain/SaaS JWT):** every `/api/v1` route requires three
-  trusted headers — `X-Tenant-Id`, `X-Store-Id`, `X-User-Id` (all UUIDs), read by
-  `HeaderCurrentContext` and enforced by `AuthEndpointFilter`. Missing/non-UUID → 401. `GET /healthz`
-  is the only unauthenticated route. Domain-rule violations surface as 409, argument validation as 400.
-  Identity and prices come from `ICurrentContext` / the `Product` record, never the client payload.
+- **Authentication & identity (lightweight custom JWT — NOT ASP.NET Core Identity):** a `User`
+  aggregate (tenant+store scoped; Name/Username/StaffCode/PinHash/PasswordHash/Role/IsActive,
+  unique `(TenantId,Username)`); PIN/password stored only as hashes via `IPasswordHasher`
+  (`PasswordHasher<>`, PBKDF2). `POST /api/v1/auth/pin-login` (StaffCode+PIN, fast till) and
+  `/auth/login` (username+password, back office) return a JWT carrying tenant/store/user/role/name/
+  staff-code, signed with a local store-server HMAC key from config (`Jwt:Key`). JWT bearer auth +
+  role policies: **Manager** for back-office product/stock writes, any authenticated (Cashier+) for
+  checkout. `ICurrentContext` reads the claims (`ClaimsCurrentContext`); the cashier's real name +
+  staff code are stamped on the `Sale` at checkout and printed on the receipt. The store-server's
+  tenant/store come from `StoreServer` config; a bootstrap **Manager** is seeded on first run
+  (`Auth:Bootstrap`, must-change-password). **Dev bypass** (`Auth:AllowDevHeaders=true`, off by
+  default, never in Production): `DevHeaderAuthMiddleware` turns `X-Tenant/Store/User-Id` headers into
+  a Manager principal — used by the tests + local curling. `GET /healthz` + the M-Pesa callback are
+  the only anonymous routes. Domain-rule violations surface as 409, argument validation as 400.
 - **Caveat:** a clean `dotnet build` / `dotnet test` against a live Postgres has not been
   re-confirmed in this environment — run them before starting new work. Stale `net8.0` artifacts
   linger under some `bin`/`obj` folders and can be ignored (or cleaned).

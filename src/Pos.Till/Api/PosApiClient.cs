@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -7,6 +8,9 @@ namespace Pos.Till.Api;
 
 public interface IPosApiClient
 {
+    Task<ApiResult<TokenDto>> PinLoginAsync(string staffCode, string pin, CancellationToken ct = default);
+    void SetAccessToken(string token);
+    void ClearAccessToken();
     Task<ApiResult<IReadOnlyList<ProductDto>>> ListProductsAsync(CancellationToken ct = default);
     Task<ApiResult<ProductDto>> FindByBarcodeAsync(string barcode, CancellationToken ct = default);
     Task<ApiResult<CompleteSaleDto>> CheckoutAsync(CheckoutRequestDto request, CancellationToken ct = default);
@@ -17,10 +21,10 @@ public interface IPosApiClient
 }
 
 /// <summary>
-/// Typed HttpClient over Pos.Api. Identity travels as the three trusted headers the API
-/// enforces (X-Tenant-Id / X-Store-Id / X-User-Id); the register id is a checkout-body field.
-/// Every method returns an ApiResult so transport/HTTP failures surface as a message in the UI
-/// rather than an exception — a till must degrade gracefully when the store server is down.
+/// Typed HttpClient over Pos.Api. Identity is a JWT bearer token obtained from /auth/pin-login and
+/// held for the session (tenant/store/user/role/name all travel inside it); the register id is a
+/// checkout-body field. Every method returns an ApiResult so transport/HTTP failures surface as a
+/// message in the UI rather than an exception — a till must degrade gracefully when the server is down.
 /// </summary>
 public sealed class PosApiClient : IPosApiClient, IDisposable
 {
@@ -37,10 +41,17 @@ public sealed class PosApiClient : IPosApiClient, IDisposable
     {
         _baseUrl = options.BaseUrl.TrimEnd('/');
         _http = new HttpClient { BaseAddress = new Uri(_baseUrl) };
-        _http.DefaultRequestHeaders.Add("X-Tenant-Id", options.TenantId.ToString());
-        _http.DefaultRequestHeaders.Add("X-Store-Id", options.StoreId.ToString());
-        _http.DefaultRequestHeaders.Add("X-User-Id", options.UserId.ToString());
     }
+
+    public Task<ApiResult<TokenDto>> PinLoginAsync(string staffCode, string pin, CancellationToken ct = default) =>
+        SendAsync<TokenDto>(() => _http.PostAsJsonAsync($"{ApiBase}/auth/pin-login",
+            new { staffCode, pin }, Json, ct), ct);
+
+    /// <summary>Hold the session token; sent as the bearer on every subsequent call.</summary>
+    public void SetAccessToken(string token) =>
+        _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+    public void ClearAccessToken() => _http.DefaultRequestHeaders.Authorization = null;
 
     public Task<ApiResult<IReadOnlyList<ProductDto>>> ListProductsAsync(CancellationToken ct = default) =>
         SendAsync<IReadOnlyList<ProductDto>>(() => _http.GetAsync($"{ApiBase}/products", ct), ct);

@@ -113,4 +113,7 @@ sealed class DemoCurrentContext(Guid tenantId, Guid storeId, Guid userId) : ICur
     public Guid TenantId { get; } = tenantId;
     public Guid StoreId  { get; } = storeId;
     public Guid UserId   { get; } = userId;
+    public Pos.Domain.Identity.UserRole Role { get; } = Pos.Domain.Identity.UserRole.Manager;
+    public string UserName { get; } = "Demo Cashier";
+    public string StaffCode { get; } = "DEMO";
 }

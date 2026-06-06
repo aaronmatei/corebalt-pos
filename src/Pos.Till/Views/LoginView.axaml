@@ -1,0 +1,33 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Pos.Till.ViewModels"
+             x:Class="Pos.Till.Views.LoginView"
+             x:DataType="vm:LoginViewModel">
+  <Panel Background="#1F2933">
+    <Border Background="White" CornerRadius="10" Padding="28" Width="360"
+            HorizontalAlignment="Center" VerticalAlignment="Center">
+      <StackPanel Spacing="14">
+        <TextBlock Text="Corebalt POS" FontSize="22" FontWeight="Bold" HorizontalAlignment="Center"/>
+        <TextBlock Text="Cashier sign in" Foreground="#52606D" HorizontalAlignment="Center"/>
+
+        <TextBlock Text="Staff code" Foreground="#52606D" Margin="0,8,0,0"/>
+        <TextBox Text="{Binding StaffCode}" Watermark="e.g. 1001" FontSize="16"/>
+
+        <TextBlock Text="PIN" Foreground="#52606D"/>
+        <TextBox Text="{Binding Pin}" PasswordChar="•" Watermark="••••" FontSize="16">
+          <TextBox.KeyBindings>
+            <KeyBinding Gesture="Enter" Command="{Binding LoginCommand}"/>
+          </TextBox.KeyBindings>
+        </TextBox>
+
+        <Button Content="Sign in" Classes="accent" HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Center" Command="{Binding LoginCommand}"/>
+
+        <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsBusy}" Height="4"/>
+
+        <TextBlock Text="{Binding Error}" Foreground="#C0392B" TextWrapping="Wrap"
+                   IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+      </StackPanel>
+    </Border>
+  </Panel>
+</UserControl>

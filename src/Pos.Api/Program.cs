@@ -1,16 +1,23 @@
+using System.IdentityModel.Tokens.Jwt;
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using Pos.Api;
 using Pos.Api.Auth;
 using Pos.Api.Endpoints;
 using Pos.Api.Errors;
 using Pos.Application.Abstractions;
 using Pos.Application.Fiscalization;
+using Pos.Application.Identity;
 using Pos.Application.Payments;
 using Pos.Application.Receipts;
 using Pos.Application.Sales;
+using Pos.Domain.Identity;
 using Pos.Infrastructure;
 using Pos.Infrastructure.Fiscalization;
+using Pos.Infrastructure.Identity;
 using Pos.Infrastructure.Mpesa;
 using Pos.Infrastructure.Persistence;
 
@@ -76,7 +83,55 @@ if (etims.Enabled && !builder.Environment.IsEnvironment("Testing"))
     builder.Services.AddHostedService<EtimsSyncWorker>(); // tests drive FiscalSyncService directly
 
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped<ICurrentContext, HeaderCurrentContext>();
+builder.Services.AddScoped<ICurrentContext, ClaimsCurrentContext>();
+
+// ── Lightweight custom identity: JWT issuing + bearer validation + role policies (NOT ASP.NET Core
+// Identity). The signing key is a local store-server secret from config (works on the LAN, offline).
+var jwt = new JwtOptions
+{
+    Key = builder.Configuration["Jwt:Key"] ?? "",
+    Issuer = builder.Configuration["Jwt:Issuer"] ?? "corebalt-pos",
+    Audience = builder.Configuration["Jwt:Audience"] ?? "corebalt-pos",
+    LifetimeMinutes = int.TryParse(builder.Configuration["Jwt:LifetimeMinutes"], out var jwtLife) ? jwtLife : 720,
+};
+builder.Services.AddSingleton(jwt);
+builder.Services.AddSingleton<ITokenIssuer, JwtTokenIssuer>();
+
+// The single tenant/store this store-server serves (login scope + bootstrap target).
+var storeServer = new StoreServerOptions
+{
+    TenantId = Guid.TryParse(builder.Configuration["StoreServer:TenantId"], out var ssTenant) ? ssTenant : Guid.Empty,
+    StoreId = Guid.TryParse(builder.Configuration["StoreServer:StoreId"], out var ssStore) ? ssStore : Guid.Empty,
+};
+builder.Services.AddSingleton(storeServer);
+builder.Services.AddScoped<AuthService>();
+
+JwtSecurityTokenHandler.DefaultMapInboundClaims = false; // keep raw claim names ("sub", "role", ...)
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(o =>
+    {
+        o.MapInboundClaims = false;
+        o.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = jwt.Issuer,
+            ValidateAudience = true,
+            ValidAudience = jwt.Audience,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(
+                string.IsNullOrWhiteSpace(jwt.Key) ? new string('0', 64) : jwt.Key)),
+            RoleClaimType = PosClaims.Role,
+            NameClaimType = PosClaims.Name,
+            ClockSkew = TimeSpan.FromMinutes(1),
+        };
+    });
+builder.Services.AddAuthorization(o =>
+{
+    o.AddPolicy("Manager", p => p.RequireRole(nameof(UserRole.Manager)));
+    o.AddPolicy("CashierOrAbove", p => p.RequireRole(
+        nameof(UserRole.Cashier), nameof(UserRole.Supervisor), nameof(UserRole.Manager)));
+});
 
 builder.Services.AddExceptionHandler<DomainExceptionHandler>();
 builder.Services.AddProblemDetails();
@@ -94,10 +149,45 @@ var app = builder.Build();
 // recreated docker container (or a clean checkout) doesn't 500 with "relation does not exist".
 // NOT done in Production: there migrations are applied deliberately by ops/CI, never implicitly by
 // the web host. Tests run under the "Testing" environment and migrate via their own fixture.
-if (app.Environment.IsDevelopment())
+if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing"))
 {
     using var scope = app.Services.CreateScope();
     scope.ServiceProvider.GetRequiredService<PosDbContext>().Database.Migrate();
+}
+
+// Bootstrap: seed the initial Manager (config username + default password, must-change-on-login) if
+// none exists for this store. No credentials in source — they come from config. Wrapped so a not-yet-
+// migrated production DB skips the seed rather than crashing the host.
+if (storeServer.TenantId != Guid.Empty)
+{
+    try
+    {
+        using var scope = app.Services.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<AuthService>().EnsureBootstrapManagerAsync(
+            app.Configuration["Auth:Bootstrap:Username"] ?? "manager",
+            app.Configuration["Auth:Bootstrap:Password"] ?? "ChangeMe!123");
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogWarning(ex, "Bootstrap manager seed skipped (DB not ready?).");
+    }
+
+    // DEV ONLY: seed a demo cashier with a PIN so the till's PIN login works out of the box.
+    if (app.Environment.IsDevelopment())
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var staff = app.Configuration["Auth:DevCashier:StaffCode"] ?? "1001";
+            var pin = app.Configuration["Auth:DevCashier:Pin"] ?? "1234";
+            await scope.ServiceProvider.GetRequiredService<AuthService>().EnsureDevCashierAsync("Demo Cashier", staff, pin);
+            app.Logger.LogWarning("DEV cashier available for till PIN login — staff code {Staff}, PIN {Pin}.", staff, pin);
+        }
+        catch (Exception ex)
+        {
+            app.Logger.LogWarning(ex, "Dev cashier seed skipped.");
+        }
+    }
 }
 
 if (useFakeMpesa)
@@ -106,12 +196,20 @@ if (useFakeMpesa)
 app.UseExceptionHandler();
 app.MapOpenApi();
 
-var v1 = app.MapGroup("/api/v1").AddEndpointFilter<AuthEndpointFilter>();
+app.UseAuthentication();
+app.UseMiddleware<DevHeaderAuthMiddleware>(); // dev/test bypass: synthesize a principal from headers
+app.UseAuthorization();
+
+// Every /api/v1 route requires an authenticated caller; back-office endpoints add the Manager policy.
+var v1 = app.MapGroup("/api/v1").RequireAuthorization();
 v1.MapCatalog();
 v1.MapSales();
 v1.MapReceipts();
 v1.MapMpesa();
 v1.MapInventory();
+
+app.MapAuth();   // /api/v1/auth/* (login + pin-login anonymous; change-password authorized)
+app.MapUsers();  // /api/v1/users (Manager only)
 
 // Unauthenticated: Daraja can't send identity headers. Idempotent + reconciled by CheckoutRequestID.
 app.MapMpesaCallback();

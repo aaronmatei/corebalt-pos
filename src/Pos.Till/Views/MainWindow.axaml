@@ -1,192 +1,21 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:Pos.Till.ViewModels"
+        xmlns:views="using:Pos.Till.Views"
         x:Class="Pos.Till.Views.MainWindow"
-        x:DataType="vm:MainViewModel"
+        x:DataType="vm:ShellViewModel"
         Width="1100" Height="720"
         MinWidth="900" MinHeight="600"
-        Title="POS Till">
+        Title="Corebalt POS Till">
 
-  <DockPanel LastChildFill="True">
-
-    <!-- Header -->
-    <Border DockPanel.Dock="Top" Background="#1F2933" Padding="16,10">
-      <Grid ColumnDefinitions="*,Auto">
-        <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-          <TextBlock Text="POS Till" Foreground="White" FontSize="20" FontWeight="Bold" VerticalAlignment="Center"/>
-          <TextBlock Text="lane 1" Foreground="#9AA5B1" VerticalAlignment="Center"/>
-        </StackPanel>
-        <ProgressBar Grid.Column="1" Width="160" IsIndeterminate="True"
-                     IsVisible="{Binding IsBusy}" VerticalAlignment="Center"/>
-      </Grid>
-    </Border>
-
-    <!-- Status bar -->
-    <Border DockPanel.Dock="Bottom" Background="#E4E7EB" Padding="16,8">
-      <TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap"/>
-    </Border>
-
-    <!-- Body: catalogue | add | cart+tender -->
-    <Grid ColumnDefinitions="1.2*,1*,1.3*" Margin="12">
-
-      <!-- Catalogue -->
-      <Border Grid.Column="0" BorderBrush="#CBD2D9" BorderThickness="1" CornerRadius="6" Margin="0,0,8,0">
-        <DockPanel Margin="10">
-          <TextBlock DockPanel.Dock="Top" Text="Catalogue" FontWeight="Bold" FontSize="15" Margin="0,0,0,8"/>
-          <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,8">
-            <TextBox Watermark="Search name / SKU / barcode" Text="{Binding SearchText}"/>
-            <Button Grid.Column="1" Content="Refresh" Margin="6,0,0,0"
-                    Command="{Binding RefreshCommand}"/>
-          </Grid>
-          <ListBox ItemsSource="{Binding FilteredProducts}"
-                   SelectedItem="{Binding SelectedProduct}">
-            <ListBox.ItemTemplate>
-              <DataTemplate x:DataType="vm:ProductRowViewModel">
-                <Grid ColumnDefinitions="*,Auto" Margin="2">
-                  <StackPanel>
-                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
-                    <TextBlock Text="{Binding Sku}" Foreground="#7B8794" FontSize="12"/>
-                  </StackPanel>
-                  <TextBlock Grid.Column="1" Text="{Binding PriceDisplay}" VerticalAlignment="Center"/>
-                </Grid>
-              </DataTemplate>
-            </ListBox.ItemTemplate>
-          </ListBox>
-        </DockPanel>
-      </Border>
-
-      <!-- Add panel -->
-      <Border Grid.Column="1" BorderBrush="#CBD2D9" BorderThickness="1" CornerRadius="6" Margin="0,0,8,0">
-        <StackPanel Margin="10" Spacing="10">
-          <TextBlock Text="Scan / add" FontWeight="Bold" FontSize="15"/>
-
-          <TextBlock Text="Barcode" Foreground="#52606D"/>
-          <Grid ColumnDefinitions="*,Auto">
-            <TextBox Watermark="Scan or type a barcode" Text="{Binding BarcodeText}"/>
-            <Button Grid.Column="1" Content="Look up" Margin="6,0,0,0"
-                    Command="{Binding LookupBarcodeCommand}"/>
-          </Grid>
-
-          <Separator Margin="0,4"/>
-
-          <!-- Pending item: weight vs quantity prompt -->
-          <Border IsVisible="{Binding HasPending}" Background="#F5F7FA"
-                  CornerRadius="6" Padding="10">
-            <StackPanel Spacing="8">
-              <TextBlock Text="{Binding PendingHeader}" FontWeight="SemiBold" TextWrapping="Wrap"/>
-              <TextBlock Text="{Binding PendingQuantityLabel}" Foreground="#52606D"/>
-              <NumericUpDown Value="{Binding PendingQuantity}" Minimum="0" Increment="1"
-                             FormatString="0.###"/>
-              <Grid ColumnDefinitions="*,*" >
-                <Button Content="Add to cart" HorizontalAlignment="Stretch"
-                        Classes="accent" Command="{Binding ConfirmAddCommand}"/>
-                <Button Grid.Column="1" Content="Cancel" Margin="6,0,0,0"
-                        HorizontalAlignment="Stretch" Command="{Binding CancelPendingCommand}"/>
-              </Grid>
-            </StackPanel>
-          </Border>
-
-          <TextBlock IsVisible="{Binding !HasPending}" Foreground="#9AA5B1" TextWrapping="Wrap"
-                     Text="Pick a product from the catalogue or scan a barcode to add it."/>
-        </StackPanel>
-      </Border>
-
-      <!-- Cart + tender -->
-      <Border Grid.Column="2" BorderBrush="#CBD2D9" BorderThickness="1" CornerRadius="6">
-        <DockPanel Margin="10">
-          <TextBlock DockPanel.Dock="Top" Text="Sale" FontWeight="Bold" FontSize="15" Margin="0,0,0,8"/>
-
-          <!-- Tender + actions pinned to the bottom -->
-          <StackPanel DockPanel.Dock="Bottom" Spacing="8" Margin="0,8,0,0">
-            <Grid ColumnDefinitions="Auto,*">
-              <TextBlock Text="Subtotal" FontWeight="SemiBold" VerticalAlignment="Center"/>
-              <TextBlock Grid.Column="1" Text="{Binding SubtotalDisplay}" HorizontalAlignment="Right"
-                         FontWeight="Bold" FontSize="16"/>
-            </Grid>
-
-            <Button Content="Remove selected line" Command="{Binding RemoveSelectedLineCommand}"/>
-
-            <Separator/>
-
-            <TextBlock Text="Tender" FontWeight="SemiBold"/>
-            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" >
-              <TextBlock Text="Cash" VerticalAlignment="Center" Margin="0,0,8,4"/>
-              <NumericUpDown Grid.Column="1" Grid.Row="0" Value="{Binding CashAmount}" Minimum="0"
-                             Increment="50" FormatString="0.00" Margin="0,0,0,4"/>
-
-              <TextBlock Grid.Row="1" Text="M-Pesa" VerticalAlignment="Center" Margin="0,0,8,4"/>
-              <NumericUpDown Grid.Column="1" Grid.Row="1" Value="{Binding MpesaAmount}" Minimum="0"
-                             Increment="50" FormatString="0.00" Margin="0,0,0,4"/>
-
-              <TextBlock Grid.Row="2" Text="Phone" VerticalAlignment="Center" Margin="0,0,8,0"/>
-              <TextBox Grid.Column="1" Grid.Row="2" Text="{Binding MpesaPhone}"
-                       Watermark="07XX XXX XXX (for M-Pesa STK push)"/>
-            </Grid>
-
-            <Grid ColumnDefinitions="Auto,*">
-              <TextBlock Text="Change (preview)" VerticalAlignment="Center"/>
-              <TextBlock Grid.Column="1" Text="{Binding ChangePreviewDisplay}" HorizontalAlignment="Right"/>
-            </Grid>
-
-            <Grid ColumnDefinitions="*,Auto">
-              <Button Content="Complete (cash)" HorizontalAlignment="Stretch" Classes="accent"
-                      Command="{Binding CompleteSaleCommand}"/>
-              <Button Grid.Column="1" Content="Clear" Margin="6,0,0,0"
-                      Command="{Binding ClearSaleCommand}"/>
-            </Grid>
-
-            <Grid ColumnDefinitions="*,Auto">
-              <Button Content="Pay with M-Pesa" HorizontalAlignment="Stretch"
-                      Command="{Binding PayWithMpesaCommand}"/>
-              <Button Grid.Column="1" Content="Cancel wait" Margin="6,0,0,0"
-                      Command="{Binding CancelMpesaCommand}"/>
-            </Grid>
-
-            <Border IsVisible="{Binding MpesaInProgress}" Background="#FFF4CE" CornerRadius="6" Padding="8">
-              <StackPanel Orientation="Horizontal" Spacing="8">
-                <ProgressBar IsIndeterminate="True" Width="70" VerticalAlignment="Center"/>
-                <TextBlock Text="Waiting for customer to enter M-Pesa PIN…"
-                           VerticalAlignment="Center" TextWrapping="Wrap"/>
-              </StackPanel>
-            </Border>
-
-            <Border IsVisible="{Binding LastSaleSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-                    Background="#E3F1DF" CornerRadius="6" Padding="10">
-              <TextBlock Text="{Binding LastSaleSummary}" FontFamily="Consolas,Menlo,monospace"/>
-            </Border>
-
-            <!-- Rendered receipt for the completed sale (deterministic; fetched from the API). -->
-            <Border IsVisible="{Binding ReceiptText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-                    BorderBrush="#CBD2D9" BorderThickness="1" CornerRadius="6" Padding="4" MaxHeight="260">
-              <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-                <TextBox Text="{Binding ReceiptText}" IsReadOnly="True" BorderThickness="0"
-                         FontFamily="Consolas,Menlo,monospace" FontSize="11"
-                         AcceptsReturn="True" TextWrapping="NoWrap"/>
-              </ScrollViewer>
-            </Border>
-          </StackPanel>
-
-          <!-- Cart lines fill the remaining space -->
-          <ListBox ItemsSource="{Binding Cart}" SelectedItem="{Binding SelectedCartLine}">
-            <ListBox.ItemTemplate>
-              <DataTemplate x:DataType="vm:CartLineViewModel">
-                <Grid ColumnDefinitions="*,Auto,Auto" Margin="2">
-                  <StackPanel>
-                    <TextBlock Text="{Binding Description}" FontWeight="SemiBold"/>
-                    <TextBlock Foreground="#7B8794" FontSize="12">
-                      <Run Text="{Binding QuantityDisplay}"/>
-                      <Run Text=" × "/>
-                      <Run Text="{Binding UnitPriceDisplay}"/>
-                    </TextBlock>
-                  </StackPanel>
-                  <TextBlock Grid.Column="2" Text="{Binding LineTotalDisplay}"
-                             VerticalAlignment="Center" FontWeight="SemiBold"/>
-                </Grid>
-              </DataTemplate>
-            </ListBox.ItemTemplate>
-          </ListBox>
-        </DockPanel>
-      </Border>
-    </Grid>
-  </DockPanel>
+  <ContentControl Content="{Binding Current}">
+    <ContentControl.DataTemplates>
+      <DataTemplate DataType="vm:LoginViewModel">
+        <views:LoginView/>
+      </DataTemplate>
+      <DataTemplate DataType="vm:MainViewModel">
+        <views:TillView/>
+      </DataTemplate>
+    </ContentControl.DataTemplates>
+  </ContentControl>
 </Window>

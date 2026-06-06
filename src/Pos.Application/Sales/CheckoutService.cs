@@ -30,7 +30,7 @@ public sealed class CheckoutService
     /// <summary>Open a fresh sale on a register. Returns the sale id (UUIDv7).</summary>
     public async Task<Guid> StartAsync(Guid registerId, string currency = "KES", CancellationToken ct = default)
     {
-        var sale = Sale.Start(_ctx.TenantId, _ctx.StoreId, registerId, _ctx.UserId, currency);
+        var sale = Sale.Start(_ctx.TenantId, _ctx.StoreId, registerId, _ctx.UserId, currency, _ctx.UserName, _ctx.StaffCode);
         await _sales.AddAsync(sale, ct);
         await _uow.SaveChangesAsync(ct);
         return sale.Id;
@@ -97,7 +97,7 @@ public sealed class CheckoutService
         if (lines is null || lines.Count == 0)
             throw new ArgumentException("A checkout needs at least one line.", nameof(lines));
 
-        var sale = Sale.Start(_ctx.TenantId, _ctx.StoreId, registerId, _ctx.UserId, currency);
+        var sale = Sale.Start(_ctx.TenantId, _ctx.StoreId, registerId, _ctx.UserId, currency, _ctx.UserName, _ctx.StaffCode);
 
         foreach (var l in lines)
         {
