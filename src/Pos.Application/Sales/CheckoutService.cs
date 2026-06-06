@@ -17,6 +17,7 @@ public sealed class CheckoutService
     private readonly ICurrentContext _ctx;
     private readonly ISaleRepository _sales;
     private readonly IProductRepository _products;
+    private readonly IRegisterRepository _registers;
     private readonly SaleCompletion _completion;
     private readonly ISetupGuard _setup;
     private readonly IUnitOfWork _uow;
@@ -25,16 +26,18 @@ public sealed class CheckoutService
         ICurrentContext ctx,
         ISaleRepository sales,
         IProductRepository products,
+        IRegisterRepository registers,
         SaleCompletion completion,
         ISetupGuard setup,
         IUnitOfWork uow)
-    { _ctx = ctx; _sales = sales; _products = products; _completion = completion; _setup = setup; _uow = uow; }
+    { _ctx = ctx; _sales = sales; _products = products; _registers = registers; _completion = completion; _setup = setup; _uow = uow; }
 
     /// <summary>Open a fresh sale on a register. Returns the sale id (UUIDv7).</summary>
     public async Task<Guid> StartAsync(Guid registerId, string currency = "KES", CancellationToken ct = default)
     {
         await _setup.EnsureConfiguredAsync(ct);
-        var sale = Sale.Start(_ctx.TenantId, _ctx.StoreId, registerId, _ctx.UserId, currency, _ctx.UserName, _ctx.StaffCode);
+        var register = await _registers.GetOrCreateAsync(_ctx.TenantId, _ctx.StoreId, registerId, ct);
+        var sale = Sale.Start(_ctx.TenantId, _ctx.StoreId, registerId, _ctx.UserId, currency, _ctx.UserName, _ctx.StaffCode, register.DisplayLabel);
         await _sales.AddAsync(sale, ct);
         await _uow.SaveChangesAsync(ct);
         return sale.Id;
@@ -102,7 +105,8 @@ public sealed class CheckoutService
             throw new ArgumentException("A checkout needs at least one line.", nameof(lines));
         await _setup.EnsureConfiguredAsync(ct);
 
-        var sale = Sale.Start(_ctx.TenantId, _ctx.StoreId, registerId, _ctx.UserId, currency, _ctx.UserName, _ctx.StaffCode);
+        var register = await _registers.GetOrCreateAsync(_ctx.TenantId, _ctx.StoreId, registerId, ct);
+        var sale = Sale.Start(_ctx.TenantId, _ctx.StoreId, registerId, _ctx.UserId, currency, _ctx.UserName, _ctx.StaffCode, register.DisplayLabel);
 
         foreach (var l in lines)
         {

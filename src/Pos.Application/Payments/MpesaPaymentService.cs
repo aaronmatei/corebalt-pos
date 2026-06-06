@@ -22,6 +22,7 @@ public sealed class MpesaPaymentService
     private readonly ICurrentContext _ctx;
     private readonly ISaleRepository _sales;
     private readonly IProductRepository _products;
+    private readonly IRegisterRepository _registers;
     private readonly IMpesaPaymentRepository _payments;
     private readonly IMpesaClient _mpesa;
     private readonly SaleCompletion _completion;
@@ -31,11 +32,11 @@ public sealed class MpesaPaymentService
     private readonly IUnitOfWork _uow;
 
     public MpesaPaymentService(
-        ICurrentContext ctx, ISaleRepository sales, IProductRepository products,
+        ICurrentContext ctx, ISaleRepository sales, IProductRepository products, IRegisterRepository registers,
         IMpesaPaymentRepository payments, IMpesaClient mpesa, SaleCompletion completion,
         FiscalizationService fiscalization, ISetupGuard setup, IClock clock, IUnitOfWork uow)
     {
-        _ctx = ctx; _sales = sales; _products = products;
+        _ctx = ctx; _sales = sales; _products = products; _registers = registers;
         _payments = payments; _mpesa = mpesa; _completion = completion;
         _fiscalization = fiscalization; _setup = setup; _clock = clock; _uow = uow;
     }
@@ -64,7 +65,8 @@ public sealed class MpesaPaymentService
         if (string.IsNullOrWhiteSpace(phoneNumber))
             throw new ArgumentException("A phone number is required for M-Pesa.", nameof(phoneNumber));
 
-        var sale = Sale.Start(_ctx.TenantId, _ctx.StoreId, registerId, _ctx.UserId, currency, _ctx.UserName, _ctx.StaffCode);
+        var register = await _registers.GetOrCreateAsync(_ctx.TenantId, _ctx.StoreId, registerId, ct);
+        var sale = Sale.Start(_ctx.TenantId, _ctx.StoreId, registerId, _ctx.UserId, currency, _ctx.UserName, _ctx.StaffCode, register.DisplayLabel);
 
         foreach (var l in lines)
         {

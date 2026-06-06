@@ -83,6 +83,22 @@ internal sealed class EtimsSettingsConfiguration : IEntityTypeConfiguration<Etim
     }
 }
 
+internal sealed class RegisterConfiguration : IEntityTypeConfiguration<Register>
+{
+    public void Configure(EntityTypeBuilder<Register> b)
+    {
+        b.ToTable("registers");
+        b.HasKey(r => r.Id);
+        b.Property(r => r.Id).HasColumnName("id").ValueGeneratedNever();
+        b.Property(r => r.TenantId).HasColumnName("tenant_id").IsRequired();
+        b.Property(r => r.StoreId).HasColumnName("store_id").IsRequired();
+        b.Property(r => r.Number).HasColumnName("number").HasMaxLength(16).IsRequired();
+        b.Property(r => r.Name).HasColumnName("name").HasMaxLength(64).IsRequired();
+        b.HasIndex(r => new { r.TenantId, r.StoreId }).HasDatabaseName("ix_registers_tenant_store");
+        b.Ignore(r => r.DisplayLabel);
+    }
+}
+
 internal sealed class PrinterProfileConfiguration : IEntityTypeConfiguration<PrinterProfile>
 {
     public void Configure(EntityTypeBuilder<PrinterProfile> b)

@@ -27,7 +27,7 @@ Offline-first: a till/branch must keep selling when the network drops.
 ## Layout
 - `src/Pos.SharedKernel` — Entity, AggregateRoot, ValueObject, Money, Uuid7, invariant interfaces
 - `src/Pos.Domain` — Sales (Sale/SaleLine/Tender, CreditNote), Inventory (StockMovement), Catalog (Product),
-  Payments (MpesaPayment), Identity (User/UserRole), Tenancy (MerchantProfile/Branch, Mpesa/EtimsSettings, Entitlements)
+  Payments (MpesaPayment), Identity (User/UserRole), Tenancy (MerchantProfile/Branch, Mpesa/EtimsSettings, Entitlements, Register, PrinterProfile)
 - `src/Pos.Application` — ports (repositories, IUnitOfWork, IClock, **IMpesaClient**, IPasswordHasher,
   ITokenIssuer, IUserRepository) + use cases `CheckoutService`, `MpesaPaymentService`, `AuthService`,
   and `ProductService` + `StockService` (single home for product/stock orchestration, shared by the
@@ -59,7 +59,7 @@ dotnet ef database update --project src/Pos.Infrastructure --startup-project sam
 dotnet run  --project samples/Pos.Persistence.Demo   # save→reload a sale, print the outbox row
 dotnet run  --project src/Pos.Api                    # store-server host on http://localhost:5080; auto-applies migrations in Development
 dotnet run  --project src/Pos.Till                   # Avalonia till (pure API client); talks to :5080
-dotnet test                                          # domain + API integration tests (89)
+dotnet test                                          # domain + API integration tests (92)
 ```
 Receipt header + currency come from the tenant's DB-backed `MerchantProfile` (set in the /setup wizard),
 NOT appsettings. A fresh install routes to `/setup`; you can't transact until provisioned. M-Pesa + eTIMS
@@ -84,7 +84,7 @@ Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Databa
   (per-client multi-tenant install: DB-backed merchant profile + per-tenant integration settings +
   entitlements + first-run setup wizard), and step 13 (thermal printing pipeline: per-register
   PrinterProfile, ESC/POS builder, logo/QR rasterizer, Network/File/Null printers, PNG preview).
-  All six projects target `net10.0`; `dotnet test` is green at 89 (29 domain + 60 API).
+  All six projects target `net10.0`; `dotnet test` is green at 92 (29 domain + 63 API).
 - **Thermal printing (per-register, hardware-free to build/test):** `PrinterProfile` per Register
   (`Pos.Domain/Tenancy`): Transport (Null/File/Network), PaperWidth (80mm/576 dots → 48 cols, 58mm/384 →
   32), HasCutter/HasCashDrawer/NativeQrSupported. `EscPosBuilder` (`Pos.Infrastructure/Printing`) turns
@@ -99,6 +99,10 @@ Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Databa
   ties build→print→preview; checkout + returns print via the register's profile (Null in dev). The
   Corebalt mark (`wwwroot/assets/corebalt-mark-black-mono.png`, `BrandAssets`) prints ONLY in the
   Powered-by footer. Only the final on-device acceptance check remains. Shared `ReceiptText` helpers.
+  Each `Register` (per store; UUIDv7 + Number/Name, auto-numbered "Lane N" on first checkout) is captured
+  on the `Sale` at sale time, so the receipt prints the lane label ("Till: Lane 1") not the GUID and
+  reprints read the captured value. The client logo is a graphic — never the literal "[LOGO]" (omitted
+  from the text + HTML receipts; rendered at the top in the image preview + ESC/POS, or cleanly absent).
 - **Vendor/tenant model (per-client installs):** Corebalt is the VENDOR; each retailer is a TENANT
   (one tenant per on-prem install, `TenantId` everywhere so it consolidates into shared cloud later).
   `MerchantProfile` (DB, `Pos.Domain/Tenancy`) is the CLIENT's identity (legal/trading name, KRA PIN,

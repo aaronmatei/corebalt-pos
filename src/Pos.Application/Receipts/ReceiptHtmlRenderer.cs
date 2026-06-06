@@ -14,9 +14,8 @@ public static class ReceiptHtmlRenderer
         var sb = new StringBuilder();
         sb.Append("<div class=\"pos-receipt\" style=\"font-family:'Courier New',monospace;font-size:12px;max-width:380px;line-height:1.35\">");
 
-        // Header
+        // Header (the client logo is a graphic — shown in the image preview, omitted from this text view).
         sb.Append("<div style=\"text-align:center\">");
-        sb.Append("<div>[LOGO]</div>");
         sb.Append(Strong(m.Header.LegalName));
         Append(sb, m.Header.BranchName);
         Append(sb, m.Header.BranchAddress);

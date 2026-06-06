@@ -16,6 +16,7 @@ internal sealed class SaleConfiguration : IEntityTypeConfiguration<Sale>
         b.Property(s => s.TenantId).HasColumnName("tenant_id").IsRequired();
         b.Property(s => s.StoreId).HasColumnName("store_id").IsRequired();
         b.Property(s => s.RegisterId).HasColumnName("register_id").IsRequired();
+        b.Property(s => s.RegisterName).HasColumnName("register_name").HasMaxLength(64).HasDefaultValue("");
         b.Property(s => s.CashierId).HasColumnName("cashier_id").IsRequired();
         b.Property(s => s.CashierName).HasColumnName("cashier_name").HasMaxLength(128).HasDefaultValue("");
         b.Property(s => s.CashierStaffCode).HasColumnName("cashier_staff_code").HasMaxLength(32).HasDefaultValue("");

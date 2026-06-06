@@ -68,6 +68,14 @@ public sealed class PrintingTests
     }
 
     [Fact]
+    public void Text_receipt_never_prints_a_logo_placeholder()
+    {
+        var text = ReceiptTextRenderer.Render(Sample(), 48);
+        text.Should().NotContain("[LOGO]");
+        text.Should().Contain("Test Retailer Ltd"); // the real header is still there
+    }
+
+    [Fact]
     public void No_logo_omits_cleanly_and_prints_the_text_header()
     {
         var bytes = new EscPosBuilder().Build(Sample(), Profile(cutter: true, drawer: true, nativeQr: true), clientLogo: null);

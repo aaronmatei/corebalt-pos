@@ -30,19 +30,17 @@ public sealed class ReceiptPreviewRenderer : IReceiptPreviewRenderer
 
         // ── Lay out elements (text lines + images) from the rendered text, splicing the logo + QR ──
         var elements = new List<object>(); // string = text line; MonoBitmap = image
+
+        // The CLIENT's logo (if any) renders at the top, centered, at the print width — never a placeholder.
+        if (clientLogo is { Length: > 0 }) elements.Add(MonoBitmap.FromImage(clientLogo, width / 2));
+
         var lines = ReceiptTextRenderer.Render(m, cols).Split('\n');
         var qr = m.Fiscal.QrData;
         var qrSkip = string.IsNullOrEmpty(qr) ? 0 : (qr!.Length + cols - 1) / cols;
 
         for (var i = 0; i < lines.Length; i++)
         {
-            var trimmed = lines[i].Trim();
-            if (trimmed == "[LOGO]")
-            {
-                if (clientLogo is { Length: > 0 }) elements.Add(MonoBitmap.FromImage(clientLogo, width / 2));
-                continue; // omit the placeholder text
-            }
-            if (trimmed == "Scan to verify (QR):" && !string.IsNullOrEmpty(qr))
+            if (lines[i].Trim() == "Scan to verify (QR):" && !string.IsNullOrEmpty(qr))
             {
                 elements.Add(lines[i]);
                 elements.Add(MonoBitmap.FromQr(qr!, width * 6 / 10));

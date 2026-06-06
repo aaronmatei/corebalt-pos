@@ -14,9 +14,9 @@ public static class ReceiptTextRenderer
         if (cols < 24) cols = 24;
         var sb = new StringBuilder();
 
-        // ── Header (logo placeholder reserved) ──
+        // ── Header ── (the logo is a graphic — rendered by the ESC/POS builder + image preview, never
+        // as text; the plain-text receipt simply omits it.)
         Line(sb, Rule('=', cols));
-        Line(sb, Center("[LOGO]", cols));
         Line(sb, Center(m.Header.LegalName, cols));
         if (m.Header.BranchName.Length > 0) Line(sb, Center(m.Header.BranchName, cols));
         foreach (var l in WrapCentered(m.Header.BranchAddress, cols)) Line(sb, l);

@@ -59,6 +59,7 @@ public static class DependencyInjection
         services.AddScoped<IMpesaSettingsRepository, MpesaSettingsRepository>();
         services.AddScoped<IEtimsSettingsRepository, EtimsSettingsRepository>();
         services.AddScoped<IEntitlementsRepository, EntitlementsRepository>();
+        services.AddScoped<IRegisterRepository, RegisterRepository>();
         services.AddScoped<IEntitlements, EntitlementsService>();
         services.AddScoped<ISetupGuard, SetupGuard>();
         services.AddScoped<SetupService>();

@@ -25,3 +25,12 @@ public interface IEntitlementsRepository
     Task<Entitlements?> GetAsync(Guid tenantId, CancellationToken ct = default);
     Task AddAsync(Entitlements entitlements, CancellationToken ct = default);
 }
+
+public interface IRegisterRepository
+{
+    Task<Register?> GetAsync(Guid tenantId, Guid storeId, Guid registerId, CancellationToken ct = default);
+
+    /// <summary>Return the lane for this id, or register it on first use with the next sequential
+    /// number/name ("Lane N"). Added to the unit of work; the caller's SaveChanges commits it.</summary>
+    Task<Register> GetOrCreateAsync(Guid tenantId, Guid storeId, Guid registerId, CancellationToken ct = default);
+}

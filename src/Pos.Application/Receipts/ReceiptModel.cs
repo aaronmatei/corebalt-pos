@@ -41,7 +41,8 @@ public sealed record ReceiptModel(
             Cashier: string.IsNullOrWhiteSpace(sale.CashierName)
                 ? Short(sale.CashierId)
                 : $"{sale.CashierName} ({sale.CashierStaffCode})",
-            Register: Short(sale.RegisterId),
+            // Human lane label captured at sale time; fall back to the short id for legacy sales.
+            Register: string.IsNullOrWhiteSpace(sale.RegisterName) ? Short(sale.RegisterId) : sale.RegisterName,
             Branch: store.BranchName);
 
         var items = sale.Lines.Select(l => new ReceiptItem(

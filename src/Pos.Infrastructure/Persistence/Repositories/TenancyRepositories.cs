@@ -5,6 +5,26 @@ using Pos.Domain.Tenancy;
 
 namespace Pos.Infrastructure.Persistence.Repositories;
 
+internal sealed class RegisterRepository : IRegisterRepository
+{
+    private readonly PosDbContext _db;
+    public RegisterRepository(PosDbContext db) => _db = db;
+
+    public Task<Register?> GetAsync(Guid tenantId, Guid storeId, Guid registerId, CancellationToken ct = default) =>
+        _db.Registers.FirstOrDefaultAsync(r => r.TenantId == tenantId && r.StoreId == storeId && r.Id == registerId, ct);
+
+    public async Task<Register> GetOrCreateAsync(Guid tenantId, Guid storeId, Guid registerId, CancellationToken ct = default)
+    {
+        var existing = await GetAsync(tenantId, storeId, registerId, ct);
+        if (existing is not null) return existing;
+
+        var n = await _db.Registers.CountAsync(r => r.TenantId == tenantId && r.StoreId == storeId, ct) + 1;
+        var register = Register.Create(tenantId, storeId, registerId, n.ToString(), $"Lane {n}");
+        await _db.Registers.AddAsync(register, ct);
+        return register;
+    }
+}
+
 internal sealed class PrinterProfileRepository : IPrinterProfileRepository
 {
     private readonly PosDbContext _db;
