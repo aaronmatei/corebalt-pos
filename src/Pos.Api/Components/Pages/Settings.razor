@@ -1,0 +1,89 @@
+@page "/settings"
+@attribute [Authorize(Policy = "BackOfficeManager")]
+@inject Pos.Application.Tenancy.IMpesaSettingsRepository MpesaRepo
+@inject Pos.Application.Tenancy.IEtimsSettingsRepository EtimsRepo
+@inject Pos.Application.Tenancy.IEntitlements Entitlements
+@inject Pos.Application.Abstractions.ICurrentContext Ctx
+
+<h1>Settings</h1>
+
+@if (!string.IsNullOrEmpty(Saved)) { <p style="color:var(--accent)">Saved: @Saved.</p> }
+@if (!string.IsNullOrEmpty(Error)) { <p class="error">@Error</p> }
+
+<div class="card">
+    <h2>Licence</h2>
+    <p style="color:var(--muted);margin-top:0">
+        Edition <strong>@(_ent?.Edition.ToString() ?? "Unlicensed")</strong>
+        @if (_ent is not null)
+        {
+            <span> · Features: <strong>@(_ent.Features == Pos.Domain.Tenancy.Feature.None ? "none" : _ent.Features.ToString())</strong>
+            · Max tills @_ent.MaxTills · Max branches @_ent.MaxBranches
+            @if (_ent.ValidUntil is { } v) { <span> · valid until @v.ToString("yyyy-MM-dd")</span> }</span>
+        }
+    </p>
+    <p style="color:var(--muted);font-size:13px">Edition, features and limits are set by Corebalt's signed licence key — apply a new key here to change them.</p>
+    <form method="post" action="/backoffice/settings/license">
+        <Csrf />
+        <label>Licence key</label>
+        <textarea name="licenseKey" rows="3" style="width:100%;font-family:monospace" required></textarea>
+        <div style="margin-top:10px"><button type="submit">Apply licence</button></div>
+    </form>
+</div>
+
+<div class="card">
+    <h2>M-Pesa (Daraja)</h2>
+    <form method="post" action="/backoffice/settings/mpesa">
+        <Csrf />
+        <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="enabled" value="true" style="width:auto" checked="@(_mpesa?.Enabled ?? false)" /> Enabled</label>
+        <div class="row">
+            <div><label>Short code</label><input name="shortCode" value="@(_mpesa?.ShortCode)" /></div>
+            <div><label>Environment</label>
+                <select name="environment">
+                    <option value="Sandbox" selected="@(_mpesa is null || _mpesa.Environment == Pos.Domain.Tenancy.MpesaEnvironment.Sandbox)">Sandbox</option>
+                    <option value="Production" selected="@(_mpesa?.Environment == Pos.Domain.Tenancy.MpesaEnvironment.Production)">Production</option>
+                </select>
+            </div>
+        </div>
+        <label>Consumer key</label><input name="consumerKey" value="@(_mpesa?.ConsumerKey)" />
+        <label>Consumer secret <span style="color:var(--muted)">(leave blank to keep)</span></label><input name="consumerSecret" type="password" />
+        <label>Passkey <span style="color:var(--muted)">(leave blank to keep)</span></label><input name="passkey" type="password" />
+        <div style="margin-top:10px"><button type="submit">Save M-Pesa</button></div>
+    </form>
+</div>
+
+<div class="card">
+    <h2>eTIMS (fiscalization)</h2>
+    <form method="post" action="/backoffice/settings/etims">
+        <Csrf />
+        <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="enabled" value="true" style="width:auto" checked="@(_etims?.Enabled ?? false)" /> Enabled</label>
+        <div class="row">
+            <div><label>Mode</label>
+                <select name="mode">
+                    <option value="Vscu" selected="@(_etims is null || _etims.Mode == Pos.Domain.Tenancy.EtimsMode.Vscu)">VSCU</option>
+                    <option value="Oscu" selected="@(_etims?.Mode == Pos.Domain.Tenancy.EtimsMode.Oscu)">OSCU</option>
+                </select>
+            </div>
+            <div><label>Device serial</label><input name="deviceSerial" value="@(_etims?.DeviceSerial)" /></div>
+        </div>
+        <label>Branch id</label><input name="branchId" value="@(_etims?.BranchId)" />
+        <label>CMC key <span style="color:var(--muted)">(leave blank to keep)</span></label><input name="cmcKey" type="password" />
+        <label>Base URL</label><input name="baseUrl" value="@(_etims?.BaseUrl)" />
+        <div style="margin-top:10px"><button type="submit">Save eTIMS</button></div>
+    </form>
+</div>
+
+@code {
+    [SupplyParameterFromQuery] public string? Saved { get; set; }
+    [SupplyParameterFromQuery] public string? Error { get; set; }
+
+    private Pos.Domain.Tenancy.MpesaSettings? _mpesa;
+    private Pos.Domain.Tenancy.EtimsSettings? _etims;
+    private Pos.Domain.Tenancy.Entitlements? _ent;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _mpesa = await MpesaRepo.GetAsync(Ctx.TenantId);
+        _etims = await EtimsRepo.GetAsync(Ctx.TenantId);
+        _ent = await Entitlements.CurrentAsync();
+    }
+}

@@ -35,11 +35,8 @@ builder.Services.AddScoped<CheckoutService>();
 builder.Services.AddScoped<Pos.Application.Catalog.ProductService>();
 builder.Services.AddScoped<Pos.Application.Inventory.StockService>();
 builder.Services.AddScoped<Pos.Application.Sales.ReturnService>();
-
-// Per-tenant integration secrets are encrypted at rest with this install's key (override in prod).
-builder.Services.AddSingleton<Pos.Application.Abstractions.ISecretProtector>(
-    new Pos.Infrastructure.Security.AesSecretProtector(
-        builder.Configuration["Secrets:Key"] ?? "corebalt-default-dev-key-please-override"));
+// Per-tenant integration secrets are encrypted at rest via ASP.NET Core Data Protection — wired in
+// AddInfrastructure (the install-level key ring on disk), not an appsettings key.
 
 // M-Pesa (Daraja). Credentials are PER TENANT (DB, encrypted) — resolved by MpesaSettingsResolver at
 // call time; CallbackUrl/TransactionType are host config. The fake provider is a dev toggle.

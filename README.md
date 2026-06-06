@@ -367,15 +367,21 @@ cloud later. **Nothing client-specific is hardcoded.**
 - **Merchant profile (DB):** the client's own identity — legal/trading name, KRA PIN, VAT status,
   contacts, currency, branches, optional logo + receipt footer. The receipt header reads THIS, never
   Corebalt's; an optional **"Powered by Corebalt POS"** footer is the only place the vendor appears.
-- **Per-tenant integration settings (encrypted):** M-Pesa (shortcode/passkey/consumer key+secret/
-  environment) and eTIMS (device/branch creds, mode, enabled) live in the DB, **AES-GCM encrypted at
-  rest** (key from `Secrets:Key`). The Daraja client and fiscalization read them per tenant — not
-  appsettings. Dev user-secrets / `Mpesa:UseFake` remain for Corebalt's own development only.
-- **Entitlements / licence:** Edition (Retail/Wholesale/Supermarket), feature flags (MultiBranch,
-  Promotions, Loyalty…), limits (max tills/branches), licence key + expiry. `IEntitlements` gates
-  optional modules (e.g. `POST /api/v1/branches` requires MultiBranch → otherwise `403`).
+- **Per-tenant integration settings (CLIENT-editable, encrypted):** M-Pesa (shortcode/passkey/consumer
+  key+secret/environment) and eTIMS (device/branch creds, mode, enabled) live in the DB, encrypted at rest
+  with **ASP.NET Core Data Protection** (the install-level key ring on disk — store ciphertext, never
+  plaintext). The Daraja client and fiscalization read them per tenant — not appsettings. Editable by the
+  client's Manager in back-office **Settings**. Dev user-secrets / `Mpesa:UseFake` are for Corebalt's own
+  development only.
+- **Entitlements / licence (VENDOR-controlled, offline):** Edition, feature flags (MultiBranch,
+  Promotions, Loyalty…), limits and expiry come ONLY from a **Corebalt-signed licence key** — a token
+  Corebalt signs with its private key (ECDSA P-256) that the app verifies with an embedded public key.
+  The client *applies* a key (in setup or Settings) but **cannot edit flags/limits** — a tampered,
+  expired, or wrong-tenant key is rejected, and entitlements are re-derived from the verified key on every
+  read (so editing the DB rows grants nothing). `IEntitlements` gates optional modules (e.g.
+  `POST /api/v1/branches` requires MultiBranch → otherwise `403`); no key → unlicensed baseline (Retail).
 - **First-run setup wizard (`/setup`):** a fresh install (no merchant profile) is routed to a guided
-  setup — business profile, branch, currency, payment + eTIMS (or skip → stub), licence, and the
+  setup — business profile, branch, currency, **licence key**, payment + eTIMS (or skip → stub), and the
   **first manager** (no seeded-credential hunting). You can't transact until setup is complete.
 
 ## Thermal printing (step 13)

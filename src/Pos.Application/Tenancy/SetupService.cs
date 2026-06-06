@@ -1,5 +1,6 @@
 using Pos.Application.Abstractions;
 using Pos.Application.Identity;
+using Pos.Application.Licensing;
 using Pos.Domain.Identity;
 using Pos.Domain.Tenancy;
 
@@ -7,9 +8,11 @@ namespace Pos.Application.Tenancy;
 
 /// <summary>
 /// Everything the first-run wizard provisions for a fresh install: the merchant profile + first branch,
-/// per-tenant M-Pesa + eTIMS settings, entitlements, and the FIRST manager (replaces hunting for seeded
-/// credentials). One atomic save; marks setup complete. Tenant/store are passed explicitly (the wizard
-/// runs anonymously against the install's configured StoreServer scope).
+/// per-tenant M-Pesa + eTIMS settings, entitlements (from a Corebalt licence key — or the unlicensed
+/// baseline if skipped), and the FIRST manager (replaces hunting for seeded credentials). One atomic
+/// save; marks setup complete. Tenant/store are passed explicitly (the wizard runs anonymously against
+/// the install's configured StoreServer scope). The client supplies a licence KEY here — never raw
+/// edition/feature/limit values — so entitlements stay vendor-controlled.
 /// </summary>
 public sealed record ProvisionRequest(
     string LegalName, string? TradingName, string KraPin, bool VatRegistered, string? VatNumber,
@@ -18,7 +21,7 @@ public sealed record ProvisionRequest(
     string? ReceiptFooter, bool ShowPoweredBy,
     bool MpesaEnabled, string? MpesaShortCode, string? MpesaConsumerKey, string? MpesaConsumerSecret, string? MpesaPasskey, MpesaEnvironment MpesaEnvironment,
     bool EtimsEnabled, EtimsMode EtimsMode, string? EtimsDeviceSerial, string? EtimsBranchId, string? EtimsCmcKey, string? EtimsBaseUrl,
-    Edition Edition, Feature Features, int MaxTills, int MaxBranches, string? LicenseKey, DateTimeOffset? ValidUntil,
+    string? LicenseKey,
     string ManagerName, string ManagerUsername, string ManagerPassword);
 
 public sealed class SetupService
@@ -27,20 +30,24 @@ public sealed class SetupService
     private readonly IMpesaSettingsRepository _mpesa;
     private readonly IEtimsSettingsRepository _etims;
     private readonly IEntitlementsRepository _entitlements;
+    private readonly ILicenseVerifier _licenses;
     private readonly IUserRepository _users;
     private readonly IPasswordHasher _hasher;
+    private readonly IClock _clock;
     private readonly IUnitOfWork _uow;
 
     public SetupService(IMerchantProfileRepository merchants, IMpesaSettingsRepository mpesa,
-        IEtimsSettingsRepository etims, IEntitlementsRepository entitlements, IUserRepository users,
-        IPasswordHasher hasher, IUnitOfWork uow)
+        IEtimsSettingsRepository etims, IEntitlementsRepository entitlements, ILicenseVerifier licenses,
+        IUserRepository users, IPasswordHasher hasher, IClock clock, IUnitOfWork uow)
     {
         _merchants = merchants;
         _mpesa = mpesa;
         _etims = etims;
         _entitlements = entitlements;
+        _licenses = licenses;
         _users = users;
         _hasher = hasher;
+        _clock = clock;
         _uow = uow;
     }
 
@@ -68,7 +75,20 @@ public sealed class SetupService
         etims.Configure(r.EtimsEnabled, r.EtimsMode, r.EtimsDeviceSerial ?? "", r.EtimsBranchId ?? "", r.EtimsCmcKey ?? "", r.EtimsBaseUrl ?? "");
         await _etims.AddAsync(etims, ct);
 
-        var entitlements = Entitlements.Create(tenantId, r.Edition, r.Features, r.MaxTills, r.MaxBranches, r.LicenseKey, r.ValidUntil);
+        // Entitlements come from a Corebalt-signed licence key (verified here), or the unlicensed
+        // baseline if none was supplied. A supplied-but-invalid key fails setup.
+        Entitlements entitlements;
+        if (string.IsNullOrWhiteSpace(r.LicenseKey))
+        {
+            entitlements = Entitlements.Unlicensed(tenantId);
+        }
+        else
+        {
+            var result = _licenses.Verify(r.LicenseKey, tenantId, _clock.UtcNow);
+            if (!result.Ok) throw new ArgumentException($"Licence key rejected: {result.Error}", nameof(r.LicenseKey));
+            var l = result.License!;
+            entitlements = Entitlements.FromLicense(tenantId, l.Edition, l.Features, l.MaxTills, l.MaxBranches, r.LicenseKey.Trim(), l.ValidUntil);
+        }
         await _entitlements.AddAsync(entitlements, ct);
 
         if (!string.IsNullOrWhiteSpace(r.ManagerUsername) && !string.IsNullOrWhiteSpace(r.ManagerPassword)

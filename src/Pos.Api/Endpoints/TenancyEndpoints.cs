@@ -30,6 +30,17 @@ internal static class TenancyEndpoints
                 e.ValidUntil is { } u && DateTimeOffset.UtcNow > u));
         }).WithTags("Tenancy");
 
+        // Apply a Corebalt-signed licence key (Manager). The client cannot set edition/flags/limits
+        // directly — only apply a key; a tampered/expired/wrong-tenant key is rejected (400).
+        app.MapPost("/license", async (ApplyLicenseRequest req, ICurrentContext ctx, SettingsService settings, CancellationToken ct) =>
+        {
+            var result = await settings.ApplyLicenseAsync(ctx.TenantId, req.LicenseKey ?? "", ct);
+            if (!result.Ok) return Results.Problem(result.Error, statusCode: StatusCodes.Status400BadRequest);
+            var l = result.License!;
+            var features = Enum.GetValues<Feature>().Where(f => f != Feature.None && (l.Features & f) == f).Select(f => f.ToString()).ToArray();
+            return Results.Ok(new EntitlementsResponse(l.Edition.ToString(), features, l.MaxTills, l.MaxBranches, l.ValidUntil, false));
+        }).RequireAuthorization("Manager").WithTags("Tenancy");
+
         // Add a branch — Manager + gated by the MultiBranch entitlement (feature flag blocks the module).
         app.MapPost("/branches", async (CreateBranchRequest req, ICurrentContext ctx, IEntitlements entitlements,
             IMerchantProfileRepository merchants, IUnitOfWork uow, CancellationToken ct) =>

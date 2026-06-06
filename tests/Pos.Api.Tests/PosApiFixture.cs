@@ -90,12 +90,12 @@ public sealed class PosApiFixture : IAsyncLifetime
         using var scope = Factory.Services.CreateScope();
         var setup = scope.ServiceProvider.GetRequiredService<SetupService>();
         if (setup.IsCompleteAsync(tenant).GetAwaiter().GetResult()) return;
-        var req = DefaultProvision();
+        var req = DefaultProvision(tenant); // a valid Corebalt licence signed for this tenant
         if (customize is not null) req = customize(req);
         setup.ProvisionAsync(tenant, store, req).GetAwaiter().GetResult();
     }
 
-    private static ProvisionRequest DefaultProvision() => new(
+    private static ProvisionRequest DefaultProvision(Guid tenant) => new(
         LegalName: "Test Retailer Ltd", TradingName: "Test Retailer", KraPin: "P051234567X",
         VatRegistered: true, VatNumber: "VAT0012345", Phone: "+254700000000", Email: "shop@test.co.ke",
         Address: "Nairobi, Kenya", Currency: "KES",
@@ -104,8 +104,7 @@ public sealed class PosApiFixture : IAsyncLifetime
         MpesaEnabled: false, MpesaShortCode: null, MpesaConsumerKey: null, MpesaConsumerSecret: null, MpesaPasskey: null,
         MpesaEnvironment: MpesaEnvironment.Sandbox,
         EtimsEnabled: true, EtimsMode: EtimsMode.Vscu, EtimsDeviceSerial: null, EtimsBranchId: null, EtimsCmcKey: null, EtimsBaseUrl: null,
-        Edition: Edition.Retail, Features: Feature.MultiBranch | Feature.Promotions | Feature.Loyalty,
-        MaxTills: 8, MaxBranches: 10, LicenseKey: "DEV-LICENSE", ValidUntil: DateTimeOffset.UtcNow.AddYears(1),
+        LicenseKey: LicenseTestSigner.Standard(tenant),
         ManagerName: "Manager", ManagerUsername: ManagerUsername, ManagerPassword: ManagerPassword);
 
     public async Task DisposeAsync()

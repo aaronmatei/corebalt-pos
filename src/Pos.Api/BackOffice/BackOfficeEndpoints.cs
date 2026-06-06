@@ -53,11 +53,6 @@ internal static class BackOfficeEndpoints
             string S(string k) => form[k].ToString();
             bool B(string k) => form[k] == "true" || form[k] == "on";
 
-            var features = Feature.None;
-            if (B("featMultiBranch")) features |= Feature.MultiBranch;
-            if (B("featPromotions")) features |= Feature.Promotions;
-            if (B("featLoyalty")) features |= Feature.Loyalty;
-
             var req = new ProvisionRequest(
                 LegalName: S("legalName"), TradingName: S("tradingName"), KraPin: S("kraPin"),
                 VatRegistered: B("vatRegistered"), VatNumber: S("vatNumber"),
@@ -70,9 +65,9 @@ internal static class BackOfficeEndpoints
                 MpesaEnvironment: Enum.TryParse<MpesaEnvironment>(S("mpesaEnvironment"), true, out var me) ? me : MpesaEnvironment.Sandbox,
                 EtimsEnabled: B("etimsEnabled"), EtimsMode: Enum.TryParse<EtimsMode>(S("etimsMode"), true, out var em) ? em : EtimsMode.Vscu,
                 EtimsDeviceSerial: S("etimsDeviceSerial"), EtimsBranchId: S("etimsBranchId"), EtimsCmcKey: S("etimsCmcKey"), EtimsBaseUrl: S("etimsBaseUrl"),
-                Edition: Enum.TryParse<Edition>(S("edition"), true, out var ed) ? ed : Edition.Retail,
-                Features: features, MaxTills: 8, MaxBranches: 10, LicenseKey: S("licenseKey"),
-                ValidUntil: DateTimeOffset.UtcNow.AddYears(1),
+                // Entitlements come from a Corebalt-signed licence key (verified in SetupService) — not
+                // editable edition/flag inputs. Blank = run on the unlicensed baseline until a key is applied.
+                LicenseKey: S("licenseKey"),
                 ManagerName: S("managerName"), ManagerUsername: S("managerUsername"), ManagerPassword: S("managerPassword"));
 
             try { await setup.ProvisionAsync(server.TenantId, server.StoreId, req, ct); }
@@ -182,6 +177,35 @@ internal static class BackOfficeEndpoints
         {
             await auth.ReactivateUserAsync(id, ct);
             return Results.Redirect("/users");
+        }).RequireAuthorization("BackOfficeManager");
+
+        // ── Settings (Manager) — the client edits their OWN integration creds and applies licence keys ──
+        g.MapPost("/settings/mpesa", async (SettingsService settings, ICurrentContext ctx,
+            [FromForm] bool enabled, [FromForm] string? shortCode, [FromForm] string? consumerKey,
+            [FromForm] string? consumerSecret, [FromForm] string? passkey, [FromForm] string? environment, CancellationToken ct) =>
+        {
+            var env = Enum.TryParse<MpesaEnvironment>(environment, true, out var e) ? e : MpesaEnvironment.Sandbox;
+            await settings.UpdateMpesaAsync(ctx.TenantId, enabled, shortCode ?? "", consumerKey ?? "",
+                consumerSecret ?? "", passkey ?? "", env, ct);
+            return Results.Redirect("/settings?saved=mpesa");
+        }).RequireAuthorization("BackOfficeManager");
+
+        g.MapPost("/settings/etims", async (SettingsService settings, ICurrentContext ctx,
+            [FromForm] bool enabled, [FromForm] string? mode, [FromForm] string? deviceSerial,
+            [FromForm] string? branchId, [FromForm] string? cmcKey, [FromForm] string? baseUrl, CancellationToken ct) =>
+        {
+            var m = Enum.TryParse<EtimsMode>(mode, true, out var em) ? em : EtimsMode.Vscu;
+            await settings.UpdateEtimsAsync(ctx.TenantId, enabled, m, deviceSerial ?? "", branchId ?? "", cmcKey ?? "", baseUrl ?? "", ct);
+            return Results.Redirect("/settings?saved=etims");
+        }).RequireAuthorization("BackOfficeManager");
+
+        g.MapPost("/settings/license", async (SettingsService settings, ICurrentContext ctx,
+            [FromForm] string licenseKey, CancellationToken ct) =>
+        {
+            var result = await settings.ApplyLicenseAsync(ctx.TenantId, licenseKey ?? "", ct);
+            return result.Ok
+                ? Results.Redirect("/settings?saved=license")
+                : Results.Redirect($"/settings?error={Uri.EscapeDataString(result.Error ?? "Invalid licence key.")}");
         }).RequireAuthorization("BackOfficeManager");
 
         return app;

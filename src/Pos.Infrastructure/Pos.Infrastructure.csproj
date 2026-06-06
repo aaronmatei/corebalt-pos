@@ -12,11 +12,15 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.0" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.8" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.8" />
     <!-- Lightweight identity: just the password hasher (NOT full ASP.NET Core Identity) + JWT issuing. -->
     <PackageReference Include="Microsoft.Extensions.Identity.Core" Version="10.0.0" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.16.0" />
+    <!-- Encrypt per-tenant integration secrets at rest with the install-level Data Protection key ring. -->
+    <PackageReference Include="Microsoft.AspNetCore.DataProtection" Version="10.0.8" />
+    <!-- Pin the transitive XML key-serialization package to the patched servicing release (advisory-free). -->
+    <PackageReference Include="System.Security.Cryptography.Xml" Version="10.0.8" />
     <!-- Thermal printing: logo/QR rasterization + the printer-free visual preview (cross-platform, managed). -->
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.7" />
     <PackageReference Include="SixLabors.ImageSharp.Drawing" Version="2.1.4" />

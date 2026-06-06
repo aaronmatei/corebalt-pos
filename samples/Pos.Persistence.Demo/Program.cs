@@ -51,8 +51,7 @@ await using (var scope = host.Services.CreateAsyncScope())
             MpesaEnvironment: Pos.Domain.Tenancy.MpesaEnvironment.Sandbox,
             EtimsEnabled: false, EtimsMode: Pos.Domain.Tenancy.EtimsMode.Vscu,
             EtimsDeviceSerial: null, EtimsBranchId: null, EtimsCmcKey: null, EtimsBaseUrl: null,
-            Edition: Pos.Domain.Tenancy.Edition.Retail, Features: Pos.Domain.Tenancy.Feature.None,
-            MaxTills: 2, MaxBranches: 1, LicenseKey: null, ValidUntil: null,
+            LicenseKey: null, // unlicensed baseline (Retail, single till) — fine for the demo
             ManagerName: "Manager", ManagerUsername: "demo-manager", ManagerPassword: "DemoPass123"));
 
     var products = sp.GetRequiredService<IProductRepository>();

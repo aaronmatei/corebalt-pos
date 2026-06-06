@@ -47,12 +47,12 @@
         <label>CMC key</label><input name="etimsCmcKey" type="password" />
 
         <h2 style="font-size:15px;margin:14px 0 4px">Licence</h2>
-        <label>Edition</label>
-        <select name="edition"><option value="Retail">Retail</option><option value="Wholesale">Wholesale</option><option value="Supermarket">Supermarket</option></select>
-        <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="featMultiBranch" value="true" style="width:auto" /> Multi-branch</label>
-        <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="featPromotions" value="true" style="width:auto" /> Promotions</label>
-        <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="featLoyalty" value="true" style="width:auto" /> Loyalty</label>
-        <label>Licence key (optional)</label><input name="licenseKey" />
+        <p style="color:var(--muted);font-size:13px;margin:0 0 6px">
+            Paste the licence key Corebalt issued for your business. It sets your edition, features and
+            limits — you can't change those directly. Leave blank to run unlicensed (Retail, single till)
+            and apply a key later in Settings.
+        </p>
+        <label>Licence key (optional)</label><textarea name="licenseKey" rows="3" style="width:100%;font-family:monospace"></textarea>
 
         <h2 style="font-size:15px;margin:14px 0 4px">First manager</h2>
         <label>Name</label><input name="managerName" value="Manager" required />

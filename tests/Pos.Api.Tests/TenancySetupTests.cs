@@ -55,6 +55,23 @@ public sealed class TenancySetupTests(PosApiFixture fx)
     }
 
     [Fact]
+    public async Task The_manager_created_by_setup_logs_in_and_there_is_no_seeded_default()
+    {
+        // The StoreServer tenant is provisioned by the wizard path (SetupService) with this manager —
+        // no hardcoded seeded credential exists.
+        var client = fx.Factory.CreateClient();
+
+        var good = await client.PostAsJsonAsync("/api/v1/auth/login",
+            new LoginRequest(PosApiFixture.ManagerUsername, PosApiFixture.ManagerPassword), PosApiFixture.Json);
+        good.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // A guessed default does NOT exist.
+        var bad = await client.PostAsJsonAsync("/api/v1/auth/login",
+            new LoginRequest("admin", "admin"), PosApiFixture.Json);
+        bad.IsSuccessStatusCode.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task After_provisioning_the_receipt_shows_the_clients_identity_with_powered_by()
     {
         var (client, _, _, _) = fx.NewClient(); // provisions "Test Retailer Ltd"
@@ -74,9 +91,9 @@ public sealed class TenancySetupTests(PosApiFixture fx)
     [Fact]
     public async Task A_disabled_feature_flag_blocks_that_module()
     {
-        // Tenant WITHOUT MultiBranch → adding a branch is blocked.
+        // Tenant on the unlicensed baseline (no licence key) → no MultiBranch → adding a branch is blocked.
         var noMulti = Uuid7.NewGuid(); var noMultiStore = Uuid7.NewGuid();
-        fx.Provision(noMulti, noMultiStore, r => r with { Features = Feature.None });
+        fx.Provision(noMulti, noMultiStore, r => r with { LicenseKey = null });
         var blocked = ClientFor(noMulti, noMultiStore);
         (await blocked.PostAsJsonAsync("/api/v1/branches", new CreateBranchRequest("West", "WB", "Westlands"), PosApiFixture.Json))
             .StatusCode.Should().Be(HttpStatusCode.Forbidden);
@@ -116,7 +133,7 @@ public sealed class TenancySetupTests(PosApiFixture fx)
         cmd.CommandText = "SELECT consumer_secret FROM mpesa_settings WHERE tenant_id = @t";
         cmd.Parameters.AddWithValue("@t", tenant);
         var stored = (string)(await cmd.ExecuteScalarAsync())!;
-        stored.Should().StartWith("g1:").And.NotContain("supersecret");
+        stored.Should().StartWith("dp:").And.NotContain("supersecret"); // Data Protection ciphertext, not plaintext
     }
 
     // ── helpers ──

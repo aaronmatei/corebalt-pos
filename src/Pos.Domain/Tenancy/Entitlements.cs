@@ -47,6 +47,28 @@ public sealed class Entitlements : Entity, ITenantScoped
             ValidUntil = validUntil,
         };
 
+    /// <summary>The entitlements a verified Corebalt licence grants, stamped with the raw key.</summary>
+    public static Entitlements FromLicense(Guid tenantId, Edition edition, Feature features,
+        int maxTills, int maxBranches, string licenseKey, DateTimeOffset validUntil) =>
+        Create(tenantId, edition, features, maxTills, maxBranches, licenseKey, validUntil);
+
+    /// <summary>The baseline an unlicensed (or invalid/expired-licence) install runs on: Retail, no
+    /// optional features, single till/branch. The gating authority when no valid key is present.</summary>
+    public static Entitlements Unlicensed(Guid tenantId) =>
+        Create(tenantId, Edition.Retail, Feature.None, 1, 1, null, null);
+
+    /// <summary>Replace this tenant's licence in place (Settings "apply key") from a verified licence.</summary>
+    public void ApplyLicense(Edition edition, Feature features, int maxTills, int maxBranches,
+        string licenseKey, DateTimeOffset validUntil)
+    {
+        Edition = edition;
+        Features = features;
+        MaxTills = maxTills < 1 ? 1 : maxTills;
+        MaxBranches = maxBranches < 1 ? 1 : maxBranches;
+        LicenseKey = licenseKey;
+        ValidUntil = validUntil;
+    }
+
     public bool IsExpiredAsOf(DateTimeOffset now) => ValidUntil is { } until && now > until;
 
     public bool Has(Feature feature, DateTimeOffset now) =>

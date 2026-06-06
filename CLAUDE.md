@@ -31,10 +31,11 @@ Offline-first: a till/branch must keep selling when the network drops.
 - `src/Pos.Application` — ports (repositories, IUnitOfWork, IClock, **IMpesaClient**, IPasswordHasher,
   ITokenIssuer, IUserRepository) + use cases `CheckoutService`, `MpesaPaymentService`, `AuthService`,
   and `ProductService` + `StockService` (single home for product/stock orchestration, shared by the
-  API and the back-office); `Receipts/`; `Fiscalization/`; `Identity/` (AuthService, StoreServerOptions, PosClaims)
+  API and the back-office); `Receipts/`; `Fiscalization/`; `Identity/` (AuthService, StoreServerOptions, PosClaims);
+  `Tenancy/` (SetupService, SettingsService, IEntitlements); `Licensing/` (signed-licence verify/sign + codec)
 - `src/Pos.Infrastructure` — PosDbContext, EF configurations, repositories, outbox interceptor,
   **DarajaMpesaClient** (Mpesa/, per-tenant via MpesaSettingsResolver), **FakeEtimsProvider** (Fiscalization/),
-  **JwtTokenIssuer + AspNetPasswordHasher** (Identity/), **AesSecretProtector** (Security/),
+  **JwtTokenIssuer + AspNetPasswordHasher** (Identity/), **DataProtectionSecretProtector** (Security/),
   **Printing/** (EscPosBuilder, MonoBitmap raster, ReceiptPreviewRenderer, Network/File/Null printers;
   ImageSharp + QRCoder), DI; `Persistence/Migrations`
 - `src/Pos.Api` — ASP.NET Core 10 store-server host: minimal-API (auth + catalog + checkout + inventory,
@@ -59,13 +60,14 @@ dotnet ef database update --project src/Pos.Infrastructure --startup-project sam
 dotnet run  --project samples/Pos.Persistence.Demo   # save→reload a sale, print the outbox row
 dotnet run  --project src/Pos.Api                    # store-server host on http://localhost:5080; auto-applies migrations in Development
 dotnet run  --project src/Pos.Till                   # Avalonia till (pure API client); talks to :5080
-dotnet test                                          # domain + API integration tests (92)
+dotnet test                                          # domain + API integration tests (97)
 ```
 Receipt header + currency come from the tenant's DB-backed `MerchantProfile` (set in the /setup wizard),
 NOT appsettings. A fresh install routes to `/setup`; you can't transact until provisioned. M-Pesa + eTIMS
-credentials are per-tenant (DB, encrypted), editable later; `Mpesa:UseFake` / `POS_MPESA_USEFAKE` still
-swaps in the dev fake client. Only the receipt-NUMBER prefix (`Receipt:NumberPrefix`, generic) and the
-secrets key (`Secrets:Key`) remain host config.
+credentials are per-tenant (DB, encrypted at rest via **ASP.NET Core Data Protection** — the install-level
+key ring on disk, no app-config key), editable later in back-office **Settings**; `Mpesa:UseFake` /
+`POS_MPESA_USEFAKE` still swaps in the dev fake client. Only the receipt-NUMBER prefix
+(`Receipt:NumberPrefix`, generic) remains host config.
 Dev/demo: `POS_MPESA_USEFAKE=true` (or `Mpesa:UseFake`) swaps in an auto-confirming in-memory M-Pesa
 client so the till's Pay-with-M-Pesa completes without Daraja/a device; ignored in Production.
 Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Database=pos;Username=postgres;Password=pos`).
@@ -84,7 +86,7 @@ Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Databa
   (per-client multi-tenant install: DB-backed merchant profile + per-tenant integration settings +
   entitlements + first-run setup wizard), and step 13 (thermal printing pipeline: per-register
   PrinterProfile, ESC/POS builder, logo/QR rasterizer, Network/File/Null printers, PNG preview).
-  All six projects target `net10.0`; `dotnet test` is green at 92 (29 domain + 63 API).
+  All six projects target `net10.0`; `dotnet test` is green at 97 (29 domain + 68 API).
 - **Thermal printing (per-register, hardware-free to build/test):** `PrinterProfile` per Register
   (`Pos.Domain/Tenancy`): Transport (Null/File/Network), PaperWidth (80mm/576 dots → 48 cols, 58mm/384 →
   32), HasCutter/HasCashDrawer/NativeQrSupported. `EscPosBuilder` (`Pos.Infrastructure/Printing`) turns
@@ -108,13 +110,20 @@ Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Databa
   `MerchantProfile` (DB, `Pos.Domain/Tenancy`) is the CLIENT's identity (legal/trading name, KRA PIN,
   VAT status, contacts, currency, branches, logo, receipt footer) — the receipt header reads THIS, never
   Corebalt's; an optional "Powered by Corebalt POS" footer is the only vendor mark. Per-tenant
-  `MpesaSettings`/`EtimsSettings` (secrets AES-GCM encrypted at rest via `ISecretProtector` + an EF value
-  converter; `Secrets:Key` config) — the Daraja client (`MpesaSettingsResolver`) and fiscalization read
-  them PER TENANT, not appsettings. `Entitlements` (Edition + `Feature` flags + limits + licence/expiry)
-  gated by `IEntitlements` (e.g. `POST /api/v1/branches` needs MultiBranch → else 403). **First-run
-  wizard** at `/setup` (anonymous until provisioned; `SetupRedirectMiddleware` routes a fresh install
-  there) provisions profile + settings + entitlements + the first manager via `SetupService`; transacting
-  is blocked by `ISetupGuard` until complete. No client-specific values hardcoded.
+  `MpesaSettings`/`EtimsSettings` (secrets encrypted at rest via `ISecretProtector` →
+  `DataProtectionSecretProtector`, the install-level Data Protection key ring + an EF value converter) —
+  the Daraja client (`MpesaSettingsResolver`) and fiscalization read them PER TENANT, not appsettings;
+  editable in back-office **Settings** (Manager). **Entitlements are VENDOR-controlled:** `Entitlements`
+  (Edition + `Feature` flags + limits + ValidUntil) come ONLY from a Corebalt-signed **licence key**
+  (ECDSA P-256; `Pos.Application/Licensing` — the app embeds the PUBLIC key and only VERIFIES, never
+  signs). The client APPLIES a key (setup or Settings) but cannot edit flags/limits; `EntitlementsService`
+  re-verifies the signed key on every read (signature + expiry + tenant) and derives features from the
+  PAYLOAD — so editing the DB columns grants nothing. Invalid/expired/wrong-tenant key → the unlicensed
+  baseline (Retail, no features). `IEntitlements` gates modules (e.g. `POST /api/v1/branches` needs
+  MultiBranch → else 403); `POST /api/v1/license` applies a key. **First-run wizard** at `/setup`
+  (anonymous until provisioned; `SetupRedirectMiddleware` routes a fresh install there) provisions profile
+  + settings + entitlements (from a licence key, or the baseline) + the first manager via `SetupService`;
+  transacting is blocked by `ISetupGuard` until complete. No client-specific values hardcoded.
 - **Returns / voids / refunds (NEVER mutate a completed sale):** a `CreditNote` aggregate (+ owned
   `CreditNoteLine`s) is a NEW immutable transaction referencing the original sale — UUIDv7 (client-
   generated for offline-replay idempotency), tenant+store scoped, store-authoritative number

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Pos.Application.Abstractions;
@@ -5,6 +6,7 @@ using Pos.Application.Catalog;
 using Pos.Application.Fiscalization;
 using Pos.Application.Identity;
 using Pos.Application.Inventory;
+using Pos.Application.Licensing;
 using Pos.Application.Payments;
 using Pos.Application.Printing;
 using Pos.Application.Sales;
@@ -53,8 +55,19 @@ public static class DependencyInjection
         services.AddSingleton<IPasswordHasher, AspNetPasswordHasher>();
 
         // Tenancy: merchant profile + per-tenant integration settings (encrypted) + entitlements + setup.
-        // Secret protector defaults here; the host overrides it with the install's configured key.
-        services.AddSingleton<ISecretProtector>(new AesSecretProtector("corebalt-default-dev-key-please-override"));
+        // Integration secrets are encrypted at rest with ASP.NET Core Data Protection — the install-level
+        // key ring persisted to disk (per-machine), isolated by application name. No app-config key.
+        var keysDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "CorebaltPos", "dp-keys");
+        Directory.CreateDirectory(keysDir);
+        services.AddDataProtection()
+            .SetApplicationName("Corebalt.POS")
+            .PersistKeysToFileSystem(new DirectoryInfo(keysDir));
+        services.AddSingleton<ISecretProtector, DataProtectionSecretProtector>();
+
+        // Licensing: the app only ever VERIFIES (embedded public key). Entitlements derive from the key.
+        services.AddSingleton<ILicenseVerifier, LicenseVerifier>();
+
         services.AddScoped<IMerchantProfileRepository, MerchantProfileRepository>();
         services.AddScoped<IMpesaSettingsRepository, MpesaSettingsRepository>();
         services.AddScoped<IEtimsSettingsRepository, EtimsSettingsRepository>();
@@ -63,6 +76,7 @@ public static class DependencyInjection
         services.AddScoped<IEntitlements, EntitlementsService>();
         services.AddScoped<ISetupGuard, SetupGuard>();
         services.AddScoped<SetupService>();
+        services.AddScoped<SettingsService>();
         services.AddScoped<MpesaSettingsResolver>();
         services.AddSingleton(new EtimsWorkerOptions());
 
