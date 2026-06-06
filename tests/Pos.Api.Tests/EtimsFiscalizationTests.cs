@@ -57,13 +57,11 @@ public sealed class EtimsFiscalizationTests(PosApiFixture fx)
     [Fact]
     public async Task Disabled_completes_as_not_required_and_receipt_shows_the_non_fiscal_note()
     {
-        // A host with eTIMS turned off (overrides the appsettings default of enabled).
-        using var disabled = fx.Factory.WithWebHostBuilder(b => b.ConfigureServices(s =>
-        {
-            s.RemoveAll<EtimsOptions>();
-            s.AddSingleton(new EtimsOptions { Enabled = false });
-        }));
-        var client = WithHeaders(disabled.CreateClient());
+        // A tenant provisioned with eTIMS turned OFF (per-tenant setting, not appsettings).
+        var tenant = Uuid7.NewGuid();
+        var store = Uuid7.NewGuid();
+        fx.Provision(tenant, store, r => r with { EtimsEnabled = false });
+        var client = ClientFor(tenant, store);
 
         var product = await CreateProduct(client, 100m);
         var saleId = await CashCheckout(client, product.Id);
@@ -101,10 +99,11 @@ public sealed class EtimsFiscalizationTests(PosApiFixture fx)
         return (await resp.Content.ReadFromJsonAsync<ProductResponse>(PosApiFixture.Json))!;
     }
 
-    private static HttpClient WithHeaders(HttpClient client)
+    private HttpClient ClientFor(Guid tenant, Guid store)
     {
-        client.DefaultRequestHeaders.Add(DevHeaderAuthMiddleware.TenantHeader, Uuid7.NewGuid().ToString());
-        client.DefaultRequestHeaders.Add(DevHeaderAuthMiddleware.StoreHeader, Uuid7.NewGuid().ToString());
+        var client = fx.Factory.CreateClient();
+        client.DefaultRequestHeaders.Add(DevHeaderAuthMiddleware.TenantHeader, tenant.ToString());
+        client.DefaultRequestHeaders.Add(DevHeaderAuthMiddleware.StoreHeader, store.ToString());
         client.DefaultRequestHeaders.Add(DevHeaderAuthMiddleware.UserHeader, Uuid7.NewGuid().ToString());
         client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         return client;

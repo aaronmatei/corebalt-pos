@@ -26,8 +26,8 @@ Offline-first: a till/branch must keep selling when the network drops.
 
 ## Layout
 - `src/Pos.SharedKernel` — Entity, AggregateRoot, ValueObject, Money, Uuid7, invariant interfaces
-- `src/Pos.Domain` — Sales (Sale/SaleLine/Tender), Inventory (StockMovement), Catalog (Product),
-  Payments (MpesaPayment — the M-Pesa reconciliation ledger), Identity (User/UserRole)
+- `src/Pos.Domain` — Sales (Sale/SaleLine/Tender, CreditNote), Inventory (StockMovement), Catalog (Product),
+  Payments (MpesaPayment), Identity (User/UserRole), Tenancy (MerchantProfile/Branch, Mpesa/EtimsSettings, Entitlements)
 - `src/Pos.Application` — ports (repositories, IUnitOfWork, IClock, **IMpesaClient**, IPasswordHasher,
   ITokenIssuer, IUserRepository) + use cases `CheckoutService`, `MpesaPaymentService`, `AuthService`,
   and `ProductService` + `StockService` (single home for product/stock orchestration, shared by the
@@ -57,12 +57,13 @@ dotnet ef database update --project src/Pos.Infrastructure --startup-project sam
 dotnet run  --project samples/Pos.Persistence.Demo   # save→reload a sale, print the outbox row
 dotnet run  --project src/Pos.Api                    # store-server host on http://localhost:5080; auto-applies migrations in Development
 dotnet run  --project src/Pos.Till                   # Avalonia till (pure API client); talks to :5080
-dotnet test                                          # domain + API integration tests (76)
+dotnet test                                          # domain + API integration tests (81)
 ```
-Receipt header comes from the `Store` config section (LegalName/KraPin/BranchName/BranchAddress/
-Phone/VatNumber/Currency) — config-swappable, defaults to Corebalt Technologies.
-M-Pesa (Daraja) secrets are read from the `Mpesa` config section / user-secrets / `POS_MPESA_*` env
-(see README). Without them, M-Pesa initiate fails gracefully (tender → Failed); cash is unaffected.
+Receipt header + currency come from the tenant's DB-backed `MerchantProfile` (set in the /setup wizard),
+NOT appsettings. A fresh install routes to `/setup`; you can't transact until provisioned. M-Pesa + eTIMS
+credentials are per-tenant (DB, encrypted), editable later; `Mpesa:UseFake` / `POS_MPESA_USEFAKE` still
+swaps in the dev fake client. Only the receipt-NUMBER prefix (`Receipt:NumberPrefix`, generic) and the
+secrets key (`Secrets:Key`) remain host config.
 Dev/demo: `POS_MPESA_USEFAKE=true` (or `Mpesa:UseFake`) swaps in an auto-confirming in-memory M-Pesa
 client so the till's Pay-with-M-Pesa completes without Daraja/a device; ignored in Production.
 Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Database=pos;Username=postgres;Password=pos`).
@@ -77,8 +78,21 @@ Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Databa
   NOT real fiscalization), step 8 (back-office data core: product/price management + stock
   receiving), step 9 (authentication & identity: custom User aggregate + JWT, role policies,
   till PIN login), step 10 (Blazor Server **back-office** admin, manager-gated, hosted in the
-  store-server process), and step 11 (returns / voids / refunds — immutable credit notes).
-  All six projects target `net10.0`; `dotnet test` is green at 76 (29 domain + 47 API).
+  store-server process), step 11 (returns / voids / refunds — immutable credit notes), and step 12
+  (per-client multi-tenant install: DB-backed merchant profile + per-tenant integration settings +
+  entitlements + first-run setup wizard). All six projects target `net10.0`; `dotnet test` is green at 81 (29 domain + 52 API).
+- **Vendor/tenant model (per-client installs):** Corebalt is the VENDOR; each retailer is a TENANT
+  (one tenant per on-prem install, `TenantId` everywhere so it consolidates into shared cloud later).
+  `MerchantProfile` (DB, `Pos.Domain/Tenancy`) is the CLIENT's identity (legal/trading name, KRA PIN,
+  VAT status, contacts, currency, branches, logo, receipt footer) — the receipt header reads THIS, never
+  Corebalt's; an optional "Powered by Corebalt POS" footer is the only vendor mark. Per-tenant
+  `MpesaSettings`/`EtimsSettings` (secrets AES-GCM encrypted at rest via `ISecretProtector` + an EF value
+  converter; `Secrets:Key` config) — the Daraja client (`MpesaSettingsResolver`) and fiscalization read
+  them PER TENANT, not appsettings. `Entitlements` (Edition + `Feature` flags + limits + licence/expiry)
+  gated by `IEntitlements` (e.g. `POST /api/v1/branches` needs MultiBranch → else 403). **First-run
+  wizard** at `/setup` (anonymous until provisioned; `SetupRedirectMiddleware` routes a fresh install
+  there) provisions profile + settings + entitlements + the first manager via `SetupService`; transacting
+  is blocked by `ISetupGuard` until complete. No client-specific values hardcoded.
 - **Returns / voids / refunds (NEVER mutate a completed sale):** a `CreditNote` aggregate (+ owned
   `CreditNoteLine`s) is a NEW immutable transaction referencing the original sale — UUIDv7 (client-
   generated for offline-replay idempotency), tenant+store scoped, store-authoritative number

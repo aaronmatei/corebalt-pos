@@ -16,7 +16,7 @@ namespace Pos.Infrastructure.Mpesa;
 public sealed class DarajaMpesaClient : IMpesaClient
 {
     private readonly HttpClient _http;
-    private readonly MpesaOptions _o;
+    private readonly MpesaSettingsResolver _resolver;
     private readonly SemaphoreSlim _tokenLock = new(1, 1);
     private string? _token;
     private DateTimeOffset _tokenExpiresAt;
@@ -28,19 +28,22 @@ public sealed class DarajaMpesaClient : IMpesaClient
     // BusinessShortCode → "400.002.02 Invalid BusinessShortCode". Serialize requests names-as-declared.
     private static readonly JsonSerializerOptions DarajaRequestJson = new() { PropertyNamingPolicy = null };
 
-    public DarajaMpesaClient(HttpClient http, MpesaOptions options)
+    // Scoped: credentials are loaded PER TENANT (per request) from the resolver, so the OAuth token
+    // cache lives only for this request instance — fine given STK pushes are infrequent.
+    public DarajaMpesaClient(HttpClient http, MpesaSettingsResolver resolver)
     {
-        _o = options;
         _http = http;
-        _http.BaseAddress ??= new Uri(_o.BaseUrl);
+        _resolver = resolver;
     }
 
     public async Task<StkPushResult> StkPushAsync(StkPushRequest request, CancellationToken ct = default)
     {
+        var _o = await _resolver.CurrentAsync(ct);
+        if (_o is null) return new StkPushResult(false, null, null, null, null, "M-Pesa is not configured for this store.");
         try
         {
-            var token = await GetTokenAsync(ct);
-            var (timestamp, password) = Stamp();
+            var token = await GetTokenAsync(_o, ct);
+            var (timestamp, password) = Stamp(_o);
             var msisdn = NormalizeMsisdn(request.PhoneNumber);
             var body = new
             {
@@ -57,7 +60,7 @@ public sealed class DarajaMpesaClient : IMpesaClient
                 TransactionDesc = Trim(request.Description, 13)
             };
 
-            using var req = new HttpRequestMessage(HttpMethod.Post, "/mpesa/stkpush/v1/processrequest")
+            using var req = new HttpRequestMessage(HttpMethod.Post, $"{_o.BaseUrl}/mpesa/stkpush/v1/processrequest")
             {
                 Content = JsonContent.Create(body, options: DarajaRequestJson)
             };
@@ -82,10 +85,12 @@ public sealed class DarajaMpesaClient : IMpesaClient
 
     public async Task<StkQueryResult> StkQueryAsync(string checkoutRequestId, CancellationToken ct = default)
     {
+        var _o = await _resolver.CurrentAsync(ct);
+        if (_o is null) return new StkQueryResult(MpesaQueryState.Failed, -1, "M-Pesa is not configured for this store.", null);
         try
         {
-            var token = await GetTokenAsync(ct);
-            var (timestamp, password) = Stamp();
+            var token = await GetTokenAsync(_o, ct);
+            var (timestamp, password) = Stamp(_o);
             var body = new
             {
                 BusinessShortCode = _o.ShortCode,
@@ -94,7 +99,7 @@ public sealed class DarajaMpesaClient : IMpesaClient
                 CheckoutRequestID = checkoutRequestId
             };
 
-            using var req = new HttpRequestMessage(HttpMethod.Post, "/mpesa/stkpushquery/v1/query")
+            using var req = new HttpRequestMessage(HttpMethod.Post, $"{_o.BaseUrl}/mpesa/stkpushquery/v1/query")
             {
                 Content = JsonContent.Create(body, options: DarajaRequestJson)
             };
@@ -124,7 +129,7 @@ public sealed class DarajaMpesaClient : IMpesaClient
         }
     }
 
-    private async Task<string> GetTokenAsync(CancellationToken ct)
+    private async Task<string> GetTokenAsync(MpesaOptions _o, CancellationToken ct)
     {
         if (_token is not null && DateTimeOffset.UtcNow < _tokenExpiresAt) return _token;
         await _tokenLock.WaitAsync(ct);
@@ -133,7 +138,7 @@ public sealed class DarajaMpesaClient : IMpesaClient
             if (_token is not null && DateTimeOffset.UtcNow < _tokenExpiresAt) return _token;
 
             var basic = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{_o.ConsumerKey}:{_o.ConsumerSecret}"));
-            using var req = new HttpRequestMessage(HttpMethod.Get, "/oauth/v1/generate?grant_type=client_credentials");
+            using var req = new HttpRequestMessage(HttpMethod.Get, $"{_o.BaseUrl}/oauth/v1/generate?grant_type=client_credentials");
             req.Headers.Authorization = new AuthenticationHeaderValue("Basic", basic);
 
             using var resp = await _http.SendAsync(req, ct);
@@ -152,7 +157,7 @@ public sealed class DarajaMpesaClient : IMpesaClient
         }
     }
 
-    private (string Timestamp, string Password) Stamp()
+    private static (string Timestamp, string Password) Stamp(MpesaOptions _o)
     {
         // Daraja stamps in EAT (UTC+3). Password is Base64(ShortCode + Passkey + Timestamp) using the
         // SAME timestamp string that goes in the request body — they must match exactly.

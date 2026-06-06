@@ -36,57 +36,42 @@ builder.Services.AddScoped<Pos.Application.Catalog.ProductService>();
 builder.Services.AddScoped<Pos.Application.Inventory.StockService>();
 builder.Services.AddScoped<Pos.Application.Sales.ReturnService>();
 
-// M-Pesa (Daraja). Secrets come from the "Mpesa" config section / user-secrets / POS_MPESA_* env;
-// never hardcoded. Singleton client so its OAuth token cache survives across requests.
-var mpesaOptions = MpesaOptions.FromConfiguration(builder.Configuration);
-builder.Services.AddSingleton(mpesaOptions);
+// Per-tenant integration secrets are encrypted at rest with this install's key (override in prod).
+builder.Services.AddSingleton<Pos.Application.Abstractions.ISecretProtector>(
+    new Pos.Infrastructure.Security.AesSecretProtector(
+        builder.Configuration["Secrets:Key"] ?? "corebalt-default-dev-key-please-override"));
 
-// DEV-ONLY fake provider toggle (Mpesa:UseFake / POS_MPESA_USEFAKE): auto-confirms STK so the till's
-// Pay-with-M-Pesa completes without Daraja or a real device. Never honored in Production.
-var useFakeMpesa = mpesaOptions.UseFake && !builder.Environment.IsProduction();
+// M-Pesa (Daraja). Credentials are PER TENANT (DB, encrypted) — resolved by MpesaSettingsResolver at
+// call time; CallbackUrl/TransactionType are host config. The fake provider is a dev toggle.
+var useFakeMpesa =
+    (bool.TryParse(builder.Configuration["Mpesa:UseFake"], out var f) && f
+     || string.Equals(Environment.GetEnvironmentVariable("POS_MPESA_USEFAKE"), "true", StringComparison.OrdinalIgnoreCase))
+    && !builder.Environment.IsProduction();
 if (useFakeMpesa)
     builder.Services.AddSingleton<IMpesaClient, FakeMpesaClient>();
 else
-    builder.Services.AddSingleton<IMpesaClient>(_ =>
-        new DarajaMpesaClient(new HttpClient { BaseAddress = new Uri(mpesaOptions.BaseUrl) }, mpesaOptions));
+    builder.Services.AddScoped<IMpesaClient>(sp =>
+        new DarajaMpesaClient(new HttpClient(), sp.GetRequiredService<MpesaSettingsResolver>()));
 builder.Services.AddScoped<MpesaPaymentService>();
 
-// Receipt header config (config-swappable via the "Store" section) + the renderer service.
-var store = new StoreInfo(
-    LegalName:     builder.Configuration["Store:LegalName"]     ?? "Corebalt Technologies",
-    KraPin:        builder.Configuration["Store:KraPin"]        ?? "A006143399W",
-    BranchName:    builder.Configuration["Store:BranchName"]    ?? "Main Branch",
-    BranchAddress: builder.Configuration["Store:BranchAddress"] ?? "Nairobi, Kenya",
-    Phone:         builder.Configuration["Store:Phone"]         ?? "+254722680861",
-    VatNumber:     builder.Configuration["Store:VatNumber"]     ?? "VAT-PLACEHOLDER",
-    Currency:      builder.Configuration["Store:Currency"]      ?? "KES");
-builder.Services.AddSingleton(store);
+// Receipt header now comes from the tenant's DB-backed MerchantProfile (see ReceiptService), NOT
+// appsettings. Only the receipt-NUMBER prefix is config (a generic branch code, not merchant identity).
 builder.Services.AddSingleton(new ReceiptOptions());
 builder.Services.AddScoped<ReceiptService>();
-
-// Human-readable receipt numbers: branch-prefixed, per-(tenant,store) sequence (e.g. "MB-000123").
-builder.Services.AddSingleton(new ReceiptNumberFormatter(builder.Configuration["Store:BranchCode"] ?? "MB"));
+builder.Services.AddSingleton(new ReceiptNumberFormatter(builder.Configuration["Receipt:NumberPrefix"] ?? "POS"));
 builder.Services.AddScoped<SaleCompletion>();
 
-// eTIMS fiscalization seam (config section "Etims"). Only the fake/training provider exists today;
-// the real VSCU/OSCU client drops in behind IFiscalizationProvider once real credentials are present.
-var etims = new EtimsOptions
+// eTIMS: per-tenant enable/creds live in EtimsSettings (DB). Only worker tuning is host config.
+builder.Services.AddSingleton(new EtimsWorkerOptions
 {
-    Enabled = bool.TryParse(builder.Configuration["Etims:Enabled"], out var etimsEnabled) && etimsEnabled,
-    Mode = Enum.TryParse<EtimsMode>(builder.Configuration["Etims:Mode"], out var etimsMode) ? etimsMode : EtimsMode.Vscu,
-    DeviceSerial = builder.Configuration["Etims:DeviceSerial"] ?? "",
-    BranchId = builder.Configuration["Etims:BranchId"] ?? "",
-    CmcKey = builder.Configuration["Etims:CmcKey"] ?? "",
-    BaseUrl = builder.Configuration["Etims:BaseUrl"] ?? "",
-    SyncIntervalSeconds = int.TryParse(builder.Configuration["Etims:SyncIntervalSeconds"], out var etimsInterval) ? etimsInterval : 30,
-    SyncMaxAttempts = int.TryParse(builder.Configuration["Etims:SyncMaxAttempts"], out var etimsAttempts) ? etimsAttempts : 5,
-};
-builder.Services.AddSingleton(etims);
-builder.Services.AddSingleton<IFiscalizationProvider, FakeEtimsProvider>(); // real provider selected by etims.HasRealCredentials later
+    IntervalSeconds = int.TryParse(builder.Configuration["Etims:SyncIntervalSeconds"], out var ei) ? ei : 30,
+    MaxAttempts = int.TryParse(builder.Configuration["Etims:SyncMaxAttempts"], out var ea) ? ea : 5,
+});
+builder.Services.AddSingleton<IFiscalizationProvider, FakeEtimsProvider>(); // real provider drops in by credentials later
 builder.Services.AddScoped<FiscalizationService>();
 builder.Services.AddScoped<FiscalSyncService>();
-if (etims.Enabled && !builder.Environment.IsEnvironment("Testing"))
-    builder.Services.AddHostedService<EtimsSyncWorker>(); // tests drive FiscalSyncService directly
+if (!builder.Environment.IsEnvironment("Testing"))
+    builder.Services.AddHostedService<EtimsSyncWorker>(); // per-tenant enable checked inside; tests drive it directly
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentContext, ClaimsCurrentContext>();
@@ -180,51 +165,8 @@ if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing"))
     scope.ServiceProvider.GetRequiredService<PosDbContext>().Database.Migrate();
 }
 
-// Bootstrap: seed the initial Manager (config username + default password, must-change-on-login) if
-// none exists for this store. No credentials in source — they come from config. Wrapped so a not-yet-
-// migrated production DB skips the seed rather than crashing the host.
-if (storeServer.TenantId != Guid.Empty)
-{
-    var bootstrapUser = app.Configuration["Auth:Bootstrap:Username"] ?? "manager";
-    var bootstrapPassword = app.Configuration["Auth:Bootstrap:Password"] ?? "ChangeMe!123";
-    var devStaff = app.Configuration["Auth:DevCashier:StaffCode"] ?? "1001";
-    var devPin = app.Configuration["Auth:DevCashier:Pin"] ?? "1234";
-
-    try
-    {
-        using var scope = app.Services.CreateScope();
-        await scope.ServiceProvider.GetRequiredService<AuthService>()
-            .EnsureBootstrapManagerAsync(bootstrapUser, bootstrapPassword);
-    }
-    catch (Exception ex)
-    {
-        app.Logger.LogWarning(ex, "Bootstrap manager seed skipped (DB not ready?).");
-    }
-
-    // DEV ONLY: seed a demo cashier with a PIN so the till's PIN login works out of the box, and print
-    // every seeded credential in one banner so they never have to be guessed. NEVER runs in Production.
-    if (app.Environment.IsDevelopment())
-    {
-        try
-        {
-            using var scope = app.Services.CreateScope();
-            await scope.ServiceProvider.GetRequiredService<AuthService>()
-                .EnsureDevCashierAsync("Demo Cashier", devStaff, devPin);
-        }
-        catch (Exception ex)
-        {
-            app.Logger.LogWarning(ex, "Dev cashier seed skipped.");
-        }
-
-        app.Logger.LogWarning(
-            "\n================ DEV SEED CREDENTIALS (Development only) ================\n" +
-            "  Till PIN login (this screen):  StaffCode '{Staff}'   PIN '{Pin}'\n" +
-            "  Back-office password login:    username  '{User}'    password '{Password}'  (must change on first login)\n" +
-            "  Defined in src/Pos.Api/appsettings.json -> Auth:DevCashier / Auth:Bootstrap\n" +
-            "=======================================================================",
-            devStaff, devPin, bootstrapUser, bootstrapPassword);
-    }
-}
+// First-run is handled by the setup wizard (/setup) — it creates the merchant profile + the first
+// manager. No seeded credentials to hunt for. A fresh install routes to /setup until provisioned.
 
 if (useFakeMpesa)
     app.Logger.LogWarning("M-Pesa: using the in-memory FAKE provider (dev/demo). Real Daraja is bypassed — set Mpesa:UseFake=false to restore it.");
@@ -232,6 +174,9 @@ if (useFakeMpesa)
 app.UseExceptionHandler();
 app.MapOpenApi();
 app.UseStaticFiles(); // back-office css + favicon from wwwroot
+
+// Route a fresh, un-provisioned install to the setup wizard (and away from it once complete).
+app.UseMiddleware<SetupRedirectMiddleware>();
 
 app.UseAuthentication();
 app.UseMiddleware<DevHeaderAuthMiddleware>(); // dev/test bypass: synthesize a principal from headers
@@ -246,6 +191,7 @@ v1.MapReceipts();
 v1.MapReturns();
 v1.MapMpesa();
 v1.MapInventory();
+v1.MapTenancy();
 
 app.MapAuth();   // /api/v1/auth/* (login + pin-login anonymous; change-password authorized)
 app.MapUsers();  // /api/v1/users (Manager only)

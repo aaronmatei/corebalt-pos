@@ -39,6 +39,22 @@ await using (var scope = host.Services.CreateAsyncScope())
     Console.WriteLine($"== Migrating database ({MaskPassword(conn)}) ==");
     await db.Database.MigrateAsync();
 
+    // First-run setup: provision a merchant profile for the demo tenant so checkout is allowed.
+    var setup = sp.GetRequiredService<Pos.Application.Tenancy.SetupService>();
+    if (!await setup.IsCompleteAsync(demoCtx.TenantId))
+        await setup.ProvisionAsync(demoCtx.TenantId, demoCtx.StoreId, new Pos.Application.Tenancy.ProvisionRequest(
+            LegalName: "Demo Retailer Ltd", TradingName: "Demo Retailer", KraPin: "P051234567X",
+            VatRegistered: true, VatNumber: "VAT001", Phone: "+254700000000", Email: null, Address: "Nairobi",
+            Currency: "KES", BranchName: "Main Branch", BranchCode: "MB", BranchAddress: "Nairobi",
+            ReceiptFooter: null, ShowPoweredBy: true,
+            MpesaEnabled: false, MpesaShortCode: null, MpesaConsumerKey: null, MpesaConsumerSecret: null, MpesaPasskey: null,
+            MpesaEnvironment: Pos.Domain.Tenancy.MpesaEnvironment.Sandbox,
+            EtimsEnabled: false, EtimsMode: Pos.Domain.Tenancy.EtimsMode.Vscu,
+            EtimsDeviceSerial: null, EtimsBranchId: null, EtimsCmcKey: null, EtimsBaseUrl: null,
+            Edition: Pos.Domain.Tenancy.Edition.Retail, Features: Pos.Domain.Tenancy.Feature.None,
+            MaxTills: 2, MaxBranches: 1, LicenseKey: null, ValidUntil: null,
+            ManagerName: "Manager", ManagerUsername: "demo-manager", ManagerPassword: "DemoPass123"));
+
     var products = sp.GetRequiredService<IProductRepository>();
     var uow = sp.GetRequiredService<IUnitOfWork>();
 

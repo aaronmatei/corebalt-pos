@@ -2,6 +2,7 @@ using Pos.Application.Abstractions;
 using Pos.Application.Fiscalization;
 using Pos.Application.Inventory;
 using Pos.Application.Receipts;
+using Pos.Application.Tenancy;
 using Pos.Domain.Inventory;
 using Pos.Domain.Sales;
 
@@ -24,12 +25,13 @@ public sealed class ReturnService
     private readonly IReceiptNumberSequence _sequence;
     private readonly ReceiptNumberFormatter _formatter;
     private readonly IFiscalizationProvider _provider;
-    private readonly EtimsOptions _etims;
-    private readonly StoreInfo _store;
+    private readonly IEtimsSettingsRepository _etims;
+    private readonly IMerchantProfileRepository _merchants;
 
     public ReturnService(ICurrentContext ctx, ISaleRepository sales, ICreditNoteRepository creditNotes,
         IStockMovementRepository stock, IUnitOfWork uow, IReceiptNumberSequence sequence,
-        ReceiptNumberFormatter formatter, IFiscalizationProvider provider, EtimsOptions etims, StoreInfo store)
+        ReceiptNumberFormatter formatter, IFiscalizationProvider provider,
+        IEtimsSettingsRepository etims, IMerchantProfileRepository merchants)
     {
         _ctx = ctx;
         _sales = sales;
@@ -40,7 +42,7 @@ public sealed class ReturnService
         _formatter = formatter;
         _provider = provider;
         _etims = etims;
-        _store = store;
+        _merchants = merchants;
     }
 
     /// <summary>Returns the credit note, or null if the original sale isn't found in this store.</summary>
@@ -98,9 +100,11 @@ public sealed class ReturnService
         }, ct);
 
         // Fiscalize the credit note (after the commit — the provider call isn't held in the tx).
-        if (_etims.Enabled && !note.IsFiscalized)
+        var etims = await _etims.GetAsync(_ctx.TenantId, ct);
+        if (etims is { Enabled: true } && !note.IsFiscalized)
         {
-            var result = await _provider.SignCreditNoteAsync(FiscalCreditNote.From(note, _store.KraPin), ct);
+            var sellerPin = (await _merchants.GetAsync(_ctx.TenantId, ct))?.KraPin ?? "";
+            var result = await _provider.SignCreditNoteAsync(FiscalCreditNote.From(note, sellerPin), ct);
             if (result.Success && result.Cuin is not null && result.SignedAtUtc is not null)
                 note.ApplyFiscalSignature(result.Cuin, result.Signature ?? "", result.QrData ?? "", result.SignedAtUtc.Value);
             else

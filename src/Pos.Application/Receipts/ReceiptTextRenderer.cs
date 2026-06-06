@@ -86,6 +86,10 @@ public static class ReceiptTextRenderer
 
         Line(sb, Rule('=', cols));
         Line(sb, Center("Thank you / Asante sana", cols));
+        // Merchant's own footer, then the optional vendor credit line.
+        if (!string.IsNullOrWhiteSpace(m.Footer))
+            foreach (var l in WrapCentered(m.Footer, cols)) Line(sb, l);
+        if (m.ShowPoweredBy) Line(sb, Center("Powered by Corebalt POS", cols));
         sb.Append(Rule('=', cols)); // final line, no trailing newline
         return sb.ToString();
     }

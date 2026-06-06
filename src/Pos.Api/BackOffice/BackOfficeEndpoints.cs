@@ -6,10 +6,11 @@ using Pos.Application.Abstractions;
 using Pos.Application.Catalog;
 using Pos.Application.Identity;
 using Pos.Application.Inventory;
-using Pos.Application.Receipts;
+using Pos.Application.Tenancy;
 using Pos.Domain.Catalog;
 using Pos.Domain.Identity;
 using Pos.Domain.Inventory;
+using Pos.Domain.Tenancy;
 using Pos.SharedKernel;
 
 namespace Pos.Api.BackOffice;
@@ -42,6 +43,46 @@ internal static class BackOfficeEndpoints
             return Results.Redirect("/login");
         }).AllowAnonymous();
 
+        // First-run setup (anonymous; only while not yet complete). Provisions the install's StoreServer
+        // scope: merchant profile, M-Pesa/eTIMS settings, entitlements and the first manager.
+        g.MapPost("/setup", async (HttpContext http, SetupService setup, StoreServerOptions server, CancellationToken ct) =>
+        {
+            if (await setup.IsCompleteAsync(server.TenantId, ct)) return Results.Redirect("/login");
+
+            var form = http.Request.Form;
+            string S(string k) => form[k].ToString();
+            bool B(string k) => form[k] == "true" || form[k] == "on";
+
+            var features = Feature.None;
+            if (B("featMultiBranch")) features |= Feature.MultiBranch;
+            if (B("featPromotions")) features |= Feature.Promotions;
+            if (B("featLoyalty")) features |= Feature.Loyalty;
+
+            var req = new ProvisionRequest(
+                LegalName: S("legalName"), TradingName: S("tradingName"), KraPin: S("kraPin"),
+                VatRegistered: B("vatRegistered"), VatNumber: S("vatNumber"),
+                Phone: S("phone"), Email: S("email"), Address: S("address"),
+                Currency: string.IsNullOrWhiteSpace(S("currency")) ? "KES" : S("currency"),
+                BranchName: S("branchName"), BranchCode: S("branchCode"), BranchAddress: S("branchAddress"),
+                ReceiptFooter: S("receiptFooter"), ShowPoweredBy: B("showPoweredBy"),
+                MpesaEnabled: B("mpesaEnabled"), MpesaShortCode: S("mpesaShortCode"), MpesaConsumerKey: S("mpesaConsumerKey"),
+                MpesaConsumerSecret: S("mpesaConsumerSecret"), MpesaPasskey: S("mpesaPasskey"),
+                MpesaEnvironment: Enum.TryParse<MpesaEnvironment>(S("mpesaEnvironment"), true, out var me) ? me : MpesaEnvironment.Sandbox,
+                EtimsEnabled: B("etimsEnabled"), EtimsMode: Enum.TryParse<EtimsMode>(S("etimsMode"), true, out var em) ? em : EtimsMode.Vscu,
+                EtimsDeviceSerial: S("etimsDeviceSerial"), EtimsBranchId: S("etimsBranchId"), EtimsCmcKey: S("etimsCmcKey"), EtimsBaseUrl: S("etimsBaseUrl"),
+                Edition: Enum.TryParse<Edition>(S("edition"), true, out var ed) ? ed : Edition.Retail,
+                Features: features, MaxTills: 8, MaxBranches: 10, LicenseKey: S("licenseKey"),
+                ValidUntil: DateTimeOffset.UtcNow.AddYears(1),
+                ManagerName: S("managerName"), ManagerUsername: S("managerUsername"), ManagerPassword: S("managerPassword"));
+
+            try { await setup.ProvisionAsync(server.TenantId, server.StoreId, req, ct); }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+            {
+                return Results.Redirect($"/setup?error={Uri.EscapeDataString(ex.Message)}");
+            }
+            return Results.Redirect("/login");
+        }).AllowAnonymous();
+
         g.MapPost("/change-password", async (HttpContext http, AuthService auth, ICurrentContext ctx,
             [FromForm] string currentPassword, [FromForm] string newPassword, CancellationToken ct) =>
         {
@@ -58,13 +99,14 @@ internal static class BackOfficeEndpoints
         }).RequireAuthorization("BackOfficeManager");
 
         // ── Products ──
-        g.MapPost("/products", async (ProductService svc, StoreInfo store,
+        g.MapPost("/products", async (ProductService svc, ICurrentContext ctx, IMerchantProfileRepository merchants,
             [FromForm] string sku, [FromForm] string name, [FromForm] string? barcode,
             [FromForm] string unit, [FromForm] string taxClass, [FromForm] decimal priceAmount, CancellationToken ct) =>
         {
             try
             {
-                await svc.CreateAsync(sku, name, new Money(priceAmount, store.Currency),
+                var currency = (await merchants.GetAsync(ctx.TenantId, ct))?.Currency ?? "KES";
+                await svc.CreateAsync(sku, name, new Money(priceAmount, currency),
                     Parse<UnitOfMeasure>(unit), barcode, Parse<TaxClass>(taxClass), ct);
                 return Results.Redirect("/products");
             }
@@ -84,10 +126,14 @@ internal static class BackOfficeEndpoints
             catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return Back($"/products/{id}", ex); }
         }).RequireAuthorization("BackOfficeManager");
 
-        g.MapPost("/products/{id:guid}/price", async (Guid id, ProductService svc, StoreInfo store,
-            [FromForm] decimal amount, CancellationToken ct) =>
+        g.MapPost("/products/{id:guid}/price", async (Guid id, ProductService svc, ICurrentContext ctx,
+            IMerchantProfileRepository merchants, [FromForm] decimal amount, CancellationToken ct) =>
         {
-            try { await svc.RepriceAsync(id, new Money(amount, store.Currency), ct); return Results.Redirect($"/products/{id}"); }
+            try
+            {
+                var currency = (await merchants.GetAsync(ctx.TenantId, ct))?.Currency ?? "KES";
+                await svc.RepriceAsync(id, new Money(amount, currency), ct); return Results.Redirect($"/products/{id}");
+            }
             catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return Back($"/products/{id}", ex); }
         }).RequireAuthorization("BackOfficeManager");
 

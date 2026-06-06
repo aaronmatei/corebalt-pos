@@ -2,7 +2,8 @@
 @page "/products"
 @attribute [Authorize(Policy = "BackOfficeManager")]
 @inject ProductService ProductSvc
-@inject Pos.Application.Receipts.StoreInfo Store
+@inject Pos.Application.Tenancy.IMerchantProfileRepository Merchants
+@inject Pos.Application.Abstractions.ICurrentContext Ctx
 
 <h1>Products</h1>
 
@@ -31,7 +32,7 @@
                 <td>@(p.Barcode ?? "—")</td>
                 <td>@p.UnitOfMeasure</td>
                 <td>@p.TaxClass</td>
-                <td style="text-align:right">@Store.Currency @p.Price.Amount.ToString("#,##0.00", CultureInfo.InvariantCulture)</td>
+                <td style="text-align:right">@_currency @p.Price.Amount.ToString("#,##0.00", CultureInfo.InvariantCulture)</td>
                 <td>@(p.IsActive ? "Active" : "Inactive")</td>
                 <td><a href="@($"/products/{p.Id}")">Edit</a></td>
             </tr>
@@ -49,9 +50,11 @@
     [SupplyParameterFromQuery] public string? Error { get; set; }
 
     private IReadOnlyList<Product> _items = [];
+    private string _currency = "KES";
 
     protected override async Task OnInitializedAsync()
     {
+        _currency = (await Merchants.GetAsync(Ctx.TenantId))?.Currency ?? "KES";
         var all = await ProductSvc.ListAsync(IncludeInactive);
         _items = string.IsNullOrWhiteSpace(Q)
             ? all

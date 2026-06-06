@@ -1,5 +1,6 @@
 using Pos.Application.Abstractions;
 using Pos.Application.Catalog;
+using Pos.Application.Tenancy;
 using Pos.Domain.Sales;
 using Pos.SharedKernel;
 
@@ -17,6 +18,7 @@ public sealed class CheckoutService
     private readonly ISaleRepository _sales;
     private readonly IProductRepository _products;
     private readonly SaleCompletion _completion;
+    private readonly ISetupGuard _setup;
     private readonly IUnitOfWork _uow;
 
     public CheckoutService(
@@ -24,12 +26,14 @@ public sealed class CheckoutService
         ISaleRepository sales,
         IProductRepository products,
         SaleCompletion completion,
+        ISetupGuard setup,
         IUnitOfWork uow)
-    { _ctx = ctx; _sales = sales; _products = products; _completion = completion; _uow = uow; }
+    { _ctx = ctx; _sales = sales; _products = products; _completion = completion; _setup = setup; _uow = uow; }
 
     /// <summary>Open a fresh sale on a register. Returns the sale id (UUIDv7).</summary>
     public async Task<Guid> StartAsync(Guid registerId, string currency = "KES", CancellationToken ct = default)
     {
+        await _setup.EnsureConfiguredAsync(ct);
         var sale = Sale.Start(_ctx.TenantId, _ctx.StoreId, registerId, _ctx.UserId, currency, _ctx.UserName, _ctx.StaffCode);
         await _sales.AddAsync(sale, ct);
         await _uow.SaveChangesAsync(ct);
@@ -96,6 +100,7 @@ public sealed class CheckoutService
     {
         if (lines is null || lines.Count == 0)
             throw new ArgumentException("A checkout needs at least one line.", nameof(lines));
+        await _setup.EnsureConfiguredAsync(ct);
 
         var sale = Sale.Start(_ctx.TenantId, _ctx.StoreId, registerId, _ctx.UserId, currency, _ctx.UserName, _ctx.StaffCode);
 

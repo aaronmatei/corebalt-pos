@@ -23,7 +23,9 @@ public sealed record ReceiptModel(
     IReadOnlyList<ReceiptLegend> Legend,
     string Currency,
     string DocumentTitle = "",       // e.g. "CREDIT NOTE / REFUND"; empty for a normal sale
-    string? AgainstReceiptNo = null) // original receipt referenced by a credit note
+    string? AgainstReceiptNo = null, // original receipt referenced by a credit note
+    string? Footer = null,           // merchant's configurable receipt footer
+    bool ShowPoweredBy = false)      // optional "Powered by Corebalt POS" vendor line
 {
     public static ReceiptModel From(Sale sale, StoreInfo store, ReceiptOptions options)
     {
@@ -78,7 +80,8 @@ public sealed record ReceiptModel(
             .ToList();
 
         return new ReceiptModel(header, meta, items, vat, totals, tenders, change,
-            BuyerPin: null, fiscal, legend, store.Currency);
+            BuyerPin: null, fiscal, legend, store.Currency,
+            Footer: store.Footer, ShowPoweredBy: store.ShowPoweredBy);
     }
 
     /// <summary>
@@ -137,7 +140,8 @@ public sealed record ReceiptModel(
 
         return new ReceiptModel(header, meta, items, vat, totals, tenders, Change: 0m,
             BuyerPin: null, fiscal, legend, store.Currency,
-            DocumentTitle: "CREDIT NOTE / REFUND", AgainstReceiptNo: note.OriginalReceiptNumber);
+            DocumentTitle: "CREDIT NOTE / REFUND", AgainstReceiptNo: note.OriginalReceiptNumber,
+            Footer: store.Footer, ShowPoweredBy: store.ShowPoweredBy);
     }
 
     private static string NegQty(CreditNoteLine l)

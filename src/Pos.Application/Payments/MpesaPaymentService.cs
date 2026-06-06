@@ -2,6 +2,7 @@ using Pos.Application.Abstractions;
 using Pos.Application.Catalog;
 using Pos.Application.Fiscalization;
 using Pos.Application.Sales;
+using Pos.Application.Tenancy;
 using Pos.Domain.Payments;
 using Pos.Domain.Sales;
 using Pos.SharedKernel;
@@ -25,17 +26,18 @@ public sealed class MpesaPaymentService
     private readonly IMpesaClient _mpesa;
     private readonly SaleCompletion _completion;
     private readonly FiscalizationService _fiscalization;
+    private readonly ISetupGuard _setup;
     private readonly IClock _clock;
     private readonly IUnitOfWork _uow;
 
     public MpesaPaymentService(
         ICurrentContext ctx, ISaleRepository sales, IProductRepository products,
         IMpesaPaymentRepository payments, IMpesaClient mpesa, SaleCompletion completion,
-        FiscalizationService fiscalization, IClock clock, IUnitOfWork uow)
+        FiscalizationService fiscalization, ISetupGuard setup, IClock clock, IUnitOfWork uow)
     {
         _ctx = ctx; _sales = sales; _products = products;
         _payments = payments; _mpesa = mpesa; _completion = completion;
-        _fiscalization = fiscalization; _clock = clock; _uow = uow;
+        _fiscalization = fiscalization; _setup = setup; _clock = clock; _uow = uow;
     }
 
     /// <summary>
@@ -58,6 +60,7 @@ public sealed class MpesaPaymentService
             throw new ArgumentException("A checkout needs at least one line.", nameof(lines));
         if (mpesaAmount <= 0)
             throw new ArgumentException("The M-Pesa amount must be positive.", nameof(mpesaAmount));
+        await _setup.EnsureConfiguredAsync(ct);
         if (string.IsNullOrWhiteSpace(phoneNumber))
             throw new ArgumentException("A phone number is required for M-Pesa.", nameof(phoneNumber));
 

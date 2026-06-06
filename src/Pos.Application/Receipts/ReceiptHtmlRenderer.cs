@@ -85,6 +85,10 @@ public static class ReceiptHtmlRenderer
         RenderFiscal(sb, m.Fiscal);
 
         sb.Append(Hr).Append("<div style=\"text-align:center\">Thank you / Asante sana</div>");
+        if (!string.IsNullOrWhiteSpace(m.Footer))
+            sb.Append("<div style=\"text-align:center\">").Append(E(m.Footer)).Append("</div>");
+        if (m.ShowPoweredBy)
+            sb.Append("<div style=\"text-align:center;color:#888;font-size:10px\">Powered by Corebalt POS</div>");
         sb.Append("</div>");
         return sb.ToString();
     }

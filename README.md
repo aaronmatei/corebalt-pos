@@ -358,6 +358,26 @@ there's no duplicated business logic.
 - Form posts go to `/backoffice/*` endpoints (antiforgery protected). On-prem on a LAN; the cookie
   session lasts a shift.
 
+## Per-client installs — vendor/tenant model (step 12)
+
+Corebalt is the **vendor**; each retailer we install for is a **tenant** (one tenant per on-prem
+deployment + DB). `TenantId` is on every row, so the same code consolidates into a shared multi-tenant
+cloud later. **Nothing client-specific is hardcoded.**
+
+- **Merchant profile (DB):** the client's own identity — legal/trading name, KRA PIN, VAT status,
+  contacts, currency, branches, optional logo + receipt footer. The receipt header reads THIS, never
+  Corebalt's; an optional **"Powered by Corebalt POS"** footer is the only place the vendor appears.
+- **Per-tenant integration settings (encrypted):** M-Pesa (shortcode/passkey/consumer key+secret/
+  environment) and eTIMS (device/branch creds, mode, enabled) live in the DB, **AES-GCM encrypted at
+  rest** (key from `Secrets:Key`). The Daraja client and fiscalization read them per tenant — not
+  appsettings. Dev user-secrets / `Mpesa:UseFake` remain for Corebalt's own development only.
+- **Entitlements / licence:** Edition (Retail/Wholesale/Supermarket), feature flags (MultiBranch,
+  Promotions, Loyalty…), limits (max tills/branches), licence key + expiry. `IEntitlements` gates
+  optional modules (e.g. `POST /api/v1/branches` requires MultiBranch → otherwise `403`).
+- **First-run setup wizard (`/setup`):** a fresh install (no merchant profile) is routed to a guided
+  setup — business profile, branch, currency, payment + eTIMS (or skip → stub), licence, and the
+  **first manager** (no seeded-credential hunting). You can't transact until setup is complete.
+
 ## Roadmap (anticipated in design choices)
 - Single-store supermarket: S1 multi-lane foundation, S2 weighed goods + scales, S3 cash office,
   S4 promotions + loyalty, S5 procurement.

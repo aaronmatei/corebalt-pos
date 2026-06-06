@@ -1,0 +1,68 @@
+@page "/setup"
+@layout EmptyLayout
+
+<div class="login-card" style="max-width:560px">
+    <h1>Set up your store</h1>
+    <p>First-run setup for this Corebalt POS install. You'll create your business profile and the first manager.</p>
+
+    @if (!string.IsNullOrEmpty(Error)) { <p class="error">@Error</p> }
+
+    <form method="post" action="/backoffice/setup">
+        <Csrf />
+
+        <h2 style="font-size:15px;margin:14px 0 4px">Business</h2>
+        <label>Legal name</label><input name="legalName" required />
+        <label>Trading name (optional)</label><input name="tradingName" />
+        <label>KRA PIN</label><input name="kraPin" required />
+        <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="vatRegistered" value="true" style="width:auto" /> VAT registered</label>
+        <label>VAT number (if registered)</label><input name="vatNumber" />
+        <label>Phone</label><input name="phone" />
+        <label>Email</label><input name="email" />
+        <label>Address</label><input name="address" />
+        <label>Currency</label><input name="currency" value="KES" />
+
+        <h2 style="font-size:15px;margin:14px 0 4px">Branch</h2>
+        <label>Branch name</label><input name="branchName" value="Main Branch" required />
+        <label>Branch code</label><input name="branchCode" value="MB" />
+        <label>Branch address</label><input name="branchAddress" />
+
+        <h2 style="font-size:15px;margin:14px 0 4px">Receipt</h2>
+        <label>Footer (optional)</label><input name="receiptFooter" />
+        <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="showPoweredBy" value="true" checked style="width:auto" /> Show "Powered by Corebalt POS"</label>
+
+        <h2 style="font-size:15px;margin:14px 0 4px">M-Pesa (optional — skip to configure later)</h2>
+        <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="mpesaEnabled" value="true" style="width:auto" /> Enable M-Pesa</label>
+        <label>Short code</label><input name="mpesaShortCode" />
+        <label>Consumer key</label><input name="mpesaConsumerKey" />
+        <label>Consumer secret</label><input name="mpesaConsumerSecret" type="password" />
+        <label>Passkey</label><input name="mpesaPasskey" type="password" />
+        <label>Environment</label>
+        <select name="mpesaEnvironment"><option value="Sandbox">Sandbox</option><option value="Production">Production</option></select>
+
+        <h2 style="font-size:15px;margin:14px 0 4px">eTIMS (optional — skip for training/stub)</h2>
+        <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="etimsEnabled" value="true" style="width:auto" /> Enable eTIMS</label>
+        <select name="etimsMode"><option value="Vscu">VSCU</option><option value="Oscu">OSCU</option></select>
+        <label>Device serial</label><input name="etimsDeviceSerial" />
+        <label>Branch id</label><input name="etimsBranchId" />
+        <label>CMC key</label><input name="etimsCmcKey" type="password" />
+
+        <h2 style="font-size:15px;margin:14px 0 4px">Licence</h2>
+        <label>Edition</label>
+        <select name="edition"><option value="Retail">Retail</option><option value="Wholesale">Wholesale</option><option value="Supermarket">Supermarket</option></select>
+        <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="featMultiBranch" value="true" style="width:auto" /> Multi-branch</label>
+        <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="featPromotions" value="true" style="width:auto" /> Promotions</label>
+        <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="featLoyalty" value="true" style="width:auto" /> Loyalty</label>
+        <label>Licence key (optional)</label><input name="licenseKey" />
+
+        <h2 style="font-size:15px;margin:14px 0 4px">First manager</h2>
+        <label>Name</label><input name="managerName" value="Manager" required />
+        <label>Username</label><input name="managerUsername" required />
+        <label>Password</label><input name="managerPassword" type="password" required />
+
+        <button type="submit" style="margin-top:18px">Complete setup</button>
+    </form>
+</div>
+
+@code {
+    [SupplyParameterFromQuery] public string? Error { get; set; }
+}

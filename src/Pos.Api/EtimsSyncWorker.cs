@@ -11,10 +11,10 @@ namespace Pos.Api;
 public sealed class EtimsSyncWorker : BackgroundService
 {
     private readonly IServiceScopeFactory _scopes;
-    private readonly EtimsOptions _options;
+    private readonly EtimsWorkerOptions _options;
     private readonly ILogger<EtimsSyncWorker> _log;
 
-    public EtimsSyncWorker(IServiceScopeFactory scopes, EtimsOptions options, ILogger<EtimsSyncWorker> log)
+    public EtimsSyncWorker(IServiceScopeFactory scopes, EtimsWorkerOptions options, ILogger<EtimsSyncWorker> log)
     {
         _scopes = scopes;
         _options = options;
@@ -23,7 +23,7 @@ public sealed class EtimsSyncWorker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var interval = TimeSpan.FromSeconds(Math.Max(5, _options.SyncIntervalSeconds));
+        var interval = TimeSpan.FromSeconds(Math.Max(5, _options.IntervalSeconds));
         while (!stoppingToken.IsCancellationRequested)
         {
             try

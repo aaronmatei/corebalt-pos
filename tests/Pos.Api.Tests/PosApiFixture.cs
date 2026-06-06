@@ -9,6 +9,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
 using Pos.Api.Auth;
 using Pos.Application.Payments;
+using Pos.Application.Tenancy;
+using Pos.Domain.Tenancy;
 using Pos.Infrastructure.Persistence;
 using Pos.SharedKernel.Ids;
 using Xunit;
@@ -70,7 +72,41 @@ public sealed class PosApiFixture : IAsyncLifetime
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PosDbContext>();
         await db.Database.MigrateAsync();
+
+        // Provision the StoreServer tenant (used by Auth/BackOffice tests) with a known manager, so the
+        // first-run wizard isn't required for those flows. Idempotent across runs.
+        Provision(StoreServerTenant, StoreServerStore);
     }
+
+    // The StoreServer scope from appsettings (Auth/BackOffice/Setup tests operate here).
+    public static readonly Guid StoreServerTenant = Guid.Parse("019600c0-0000-7000-8000-000000000001");
+    public static readonly Guid StoreServerStore = Guid.Parse("019600c0-0000-7000-8000-000000000002");
+    public const string ManagerUsername = "manager";
+    public const string ManagerPassword = "ChangeMe!123";
+
+    /// <summary>Provision a tenant/store (merchant profile, settings, entitlements, manager). Idempotent.</summary>
+    public void Provision(Guid tenant, Guid store, Func<ProvisionRequest, ProvisionRequest>? customize = null)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var setup = scope.ServiceProvider.GetRequiredService<SetupService>();
+        if (setup.IsCompleteAsync(tenant).GetAwaiter().GetResult()) return;
+        var req = DefaultProvision();
+        if (customize is not null) req = customize(req);
+        setup.ProvisionAsync(tenant, store, req).GetAwaiter().GetResult();
+    }
+
+    private static ProvisionRequest DefaultProvision() => new(
+        LegalName: "Test Retailer Ltd", TradingName: "Test Retailer", KraPin: "P051234567X",
+        VatRegistered: true, VatNumber: "VAT0012345", Phone: "+254700000000", Email: "shop@test.co.ke",
+        Address: "Nairobi, Kenya", Currency: "KES",
+        BranchName: "Main Branch", BranchCode: "MB", BranchAddress: "Nairobi",
+        ReceiptFooter: "Goods once sold are returnable within 7 days", ShowPoweredBy: true,
+        MpesaEnabled: false, MpesaShortCode: null, MpesaConsumerKey: null, MpesaConsumerSecret: null, MpesaPasskey: null,
+        MpesaEnvironment: MpesaEnvironment.Sandbox,
+        EtimsEnabled: true, EtimsMode: EtimsMode.Vscu, EtimsDeviceSerial: null, EtimsBranchId: null, EtimsCmcKey: null, EtimsBaseUrl: null,
+        Edition: Edition.Retail, Features: Feature.MultiBranch | Feature.Promotions | Feature.Loyalty,
+        MaxTills: 8, MaxBranches: 10, LicenseKey: "DEV-LICENSE", ValidUntil: DateTimeOffset.UtcNow.AddYears(1),
+        ManagerName: "Manager", ManagerUsername: ManagerUsername, ManagerPassword: ManagerPassword);
 
     public async Task DisposeAsync()
     {
@@ -80,12 +116,17 @@ public sealed class PosApiFixture : IAsyncLifetime
             await Factory.DisposeAsync();
     }
 
-    /// <summary>Builds an HttpClient pre-populated with the identity headers for a fresh scope.</summary>
-    public (HttpClient Client, Guid TenantId, Guid StoreId, Guid UserId) NewClient()
+    /// <summary>
+    /// Builds an HttpClient with dev-header identity for a fresh tenant/store. By default the tenant is
+    /// provisioned (merchant profile + entitlements + eTIMS on) so it can transact; pass provision:false
+    /// for an un-configured tenant (setup / can't-transact tests).
+    /// </summary>
+    public (HttpClient Client, Guid TenantId, Guid StoreId, Guid UserId) NewClient(bool provision = true)
     {
         var tenant = Uuid7.NewGuid();
         var store  = Uuid7.NewGuid();
         var user   = Uuid7.NewGuid();
+        if (provision) Provision(tenant, store);
         var client = Factory.CreateClient();
         client.DefaultRequestHeaders.Add(DevHeaderAuthMiddleware.TenantHeader, tenant.ToString());
         client.DefaultRequestHeaders.Add(DevHeaderAuthMiddleware.StoreHeader,  store.ToString());
