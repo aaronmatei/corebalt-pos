@@ -19,4 +19,14 @@ internal sealed class StockMovementRepository : IStockMovementRepository
         _db.StockMovements
             .Where(m => m.TenantId == tenantId && m.StoreId == storeId && m.ProductId == productId)
             .SumAsync(m => m.QuantityDelta, ct);
+
+    public async Task<IReadOnlyDictionary<Guid, decimal>> GetOnHandByProductAsync(Guid tenantId, Guid storeId, CancellationToken ct = default)
+    {
+        var rows = await _db.StockMovements
+            .Where(m => m.TenantId == tenantId && m.StoreId == storeId)
+            .GroupBy(m => m.ProductId)
+            .Select(g => new { ProductId = g.Key, OnHand = g.Sum(m => m.QuantityDelta) })
+            .ToListAsync(ct);
+        return rows.ToDictionary(r => r.ProductId, r => r.OnHand);
+    }
 }

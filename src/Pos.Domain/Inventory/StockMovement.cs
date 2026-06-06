@@ -17,12 +17,13 @@ public sealed class StockMovement : Entity, ITenantScoped, IStoreScoped
     public decimal QuantityDelta { get; private set; } // + receipts, - sales; decimal for weighed goods
     public StockMovementReason Reason { get; private set; }
     public Guid? SourceRef { get; private set; }        // e.g. the SaleId that caused the movement
+    public string? Reference { get; private set; }      // free-text: supplier / GRN / stock-take note
     public DateTimeOffset OccurredAtUtc { get; private set; }
 
     private StockMovement() { } // EF
 
     public static StockMovement Record(Guid tenantId, Guid storeId, Guid productId,
-        decimal quantityDelta, StockMovementReason reason, Guid? sourceRef = null)
+        decimal quantityDelta, StockMovementReason reason, Guid? sourceRef = null, string? reference = null)
     {
         if (quantityDelta == 0) throw new ArgumentException("Movement delta cannot be zero.", nameof(quantityDelta));
         return new StockMovement
@@ -34,6 +35,7 @@ public sealed class StockMovement : Entity, ITenantScoped, IStoreScoped
             QuantityDelta = quantityDelta,
             Reason = reason,
             SourceRef = sourceRef,
+            Reference = string.IsNullOrWhiteSpace(reference) ? null : reference.Trim(),
             OccurredAtUtc = DateTimeOffset.UtcNow
         };
     }

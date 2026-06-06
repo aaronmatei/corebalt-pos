@@ -18,6 +18,7 @@ internal sealed class StockMovementConfiguration : IEntityTypeConfiguration<Stoc
         b.Property(m => m.QuantityDelta).HasColumnName("quantity_delta").HasColumnType("numeric(18,3)");
         b.Property(m => m.Reason).HasColumnName("reason").HasConversion<int>();
         b.Property(m => m.SourceRef).HasColumnName("source_ref");
+        b.Property(m => m.Reference).HasColumnName("reference").HasMaxLength(128);
         b.Property(m => m.OccurredAtUtc).HasColumnName("occurred_at_utc").HasColumnType("timestamptz");
 
         // Drives the stock-on-hand SUM query (the only allowed way to ask "how much do we have").

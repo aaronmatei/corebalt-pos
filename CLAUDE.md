@@ -54,7 +54,7 @@ dotnet ef database update --project src/Pos.Infrastructure --startup-project sam
 dotnet run  --project samples/Pos.Persistence.Demo   # save→reload a sale, print the outbox row
 dotnet run  --project src/Pos.Api                    # store-server host on http://localhost:5080; auto-applies migrations in Development
 dotnet run  --project src/Pos.Till                   # Avalonia till (pure API client); talks to :5080
-dotnet test                                          # domain + API integration tests (53)
+dotnet test                                          # domain + API integration tests (63)
 ```
 Receipt header comes from the `Store` config section (LegalName/KraPin/BranchName/BranchAddress/
 Phone/VatNumber/Currency) — config-swappable, defaults to Corebalt Technologies.
@@ -70,8 +70,9 @@ Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Databa
   persistence + transactional outbox, `InitialCreate` migration), step 3 (`Pos.Api`
   store-server host + `Pos.Api.Tests` integration tests), step 4 (`Pos.Till` Avalonia client), and
   step 5 (real M-Pesa via Daraja STK push, as an async pending→confirmed flow), and step 6
-  (fiscal receipt incl. human receipt numbers), and step 7 (eTIMS fiscalization SEAM — eTIMS-ready,
-  NOT real fiscalization). All six projects target `net10.0`; `dotnet test` is green at 53 (29 domain + 24 API).
+  (fiscal receipt incl. human receipt numbers), step 7 (eTIMS fiscalization SEAM — eTIMS-ready,
+  NOT real fiscalization), and step 8 (back-office data core: product/price management + stock
+  receiving). All six projects target `net10.0`; `dotnet test` is green at 63 (29 domain + 34 API).
 - **eTIMS seam (mirrors the M-Pesa provider pattern):** `IFiscalizationProvider.SignAsync/SyncAsync`
   with `FakeEtimsProvider` (training mode — deterministic "TEST-…" CUIN from the receipt number, fake
   signature, KRA-shaped QR URL; SyncAsync a logged no-op). Config "Etims": Enabled, Mode (Vscu/Oscu),
@@ -103,11 +104,19 @@ Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Databa
   reconciled by CheckoutRequestID + amount). The sale finalizes (complete + stock movements + outbox)
   only when the pending tender confirms. Daraja secrets come from user-secrets / `POS_MPESA_*` env —
   never hardcoded; tests use a fake `IMpesaClient` (no network). See README "M-Pesa (Daraja)".
-- **Catalog/checkout endpoints (`/api/v1`):** `GET /products` (list), `GET /products/{id}`,
-  `GET /products/by-sku/{sku}`, `GET /products/barcode/{barcode}`, `POST /products`,
-  `PUT /products/{id}/price`; `POST /sales/checkout` (atomic one-shot: start+lines+tenders+complete
+- **Back-office (products/pricing/stock):** `POST /products` (validates SKU unique + barcode unique
+  when present, per store), `PUT /products/{id}` (name/barcode/unit/tax-class/active),
+  `POST /products/{id}/deactivate` (SOFT — never hard-delete; list defaults to active, `?includeInactive=true`),
+  `PUT /products/{id}/price` (raises `ProductPriceChanged` to the outbox — audit + central-pricing seam;
+  current Price stays for fast lookup). Stock is the append-only `StockMovement` ledger: `POST /inventory/receive`
+  (positive qty, reason Purchase/OpeningBalance/Adjustment, optional Reference) and `POST /inventory/adjust`
+  (signed qty, reason Adjustment) each write ONE immutable movement; `GET /inventory/{id}/on-hand` and
+  `GET /inventory/report` are always SUM(movements) — on-hand is NEVER a stored column.
+- **Catalog/checkout endpoints (`/api/v1`):** `GET /products` (list; `?includeInactive`), `GET /products/{id}`,
+  `GET /products/by-sku/{sku}`, `GET /products/barcode/{barcode}`;
+  `POST /sales/checkout` (atomic one-shot: start+lines+tenders+complete
   in a single transaction, returns 201), plus the incremental `POST /sales` → `/lines` → `/tenders`
-  → `/complete` flow; `GET /sales/{id}`; `GET /inventory/{productId}/on-hand`.
+  → `/complete` flow; `GET /sales/{id}`; `GET /sales/{id}/receipt`.
 - **Product.Barcode:** nullable scan code (GTIN/EAN-13), distinct from `Sku`, indexed per tenant
   (`AddProductBarcode` migration). The till's scan handler (`Scanning/ScannedCode`) already
   classifies price-embedded EAN-13 (number-system digit `2`) so weighed-goods PLU+weight decoding

@@ -120,12 +120,14 @@ is the only route that doesn't need them.
 
 | Method | Path                                             | Notes                                                |
 |--------|--------------------------------------------------|------------------------------------------------------|
-| GET    | `/api/v1/products`                               | List the store's catalogue (ordered by name)         |
-| POST   | `/api/v1/products`                               | Create a Product (optional `barcode`)                |
+| GET    | `/api/v1/products`                               | List catalogue (active only; `?includeInactive=true`) |
+| POST   | `/api/v1/products`                               | Create (SKU unique; barcode unique when present)     |
+| PUT    | `/api/v1/products/{id}`                          | Update name/barcode/unit/tax-class/active            |
+| POST   | `/api/v1/products/{id}/deactivate`               | Soft-delete (sets IsActive=false)                    |
 | GET    | `/api/v1/products/{id}`                          |                                                      |
 | GET    | `/api/v1/products/by-sku/{sku}`                  |                                                      |
 | GET    | `/api/v1/products/barcode/{barcode}`             | Look up by printed GTIN/EAN-13 scan code             |
-| PUT    | `/api/v1/products/{id}/price`                    | Reprice                                              |
+| PUT    | `/api/v1/products/{id}/price`                    | Reprice — emits ProductPriceChanged to the outbox    |
 | POST   | `/api/v1/sales/checkout`                          | **Atomic** cash start+lines+tenders+complete → 201   |
 | POST   | `/api/v1/sales/mpesa/checkout`                    | Initiate STK push (async); sale stays pending → 202   |
 | GET    | `/api/v1/sales/mpesa/{saleId}/status`             | Poll: reconciles via STK query (Pending/Confirmed/Failed) |
@@ -136,7 +138,10 @@ is the only route that doesn't need them.
 | POST   | `/api/v1/sales/{saleId}/complete`                | Writes -delta StockMovements in the same UoW         |
 | GET    | `/api/v1/sales/{saleId}`                         |                                                      |
 | GET    | `/api/v1/sales/{saleId}/receipt`                 | Fiscal receipt (`?cols=48`/`32`): model + text + HTML |
+| POST   | `/api/v1/inventory/receive`                      | Receive IN: +qty, reason Purchase/OpeningBalance/Adjustment |
+| POST   | `/api/v1/inventory/adjust`                       | Adjustment: signed qty (stock take / shrinkage)      |
 | GET    | `/api/v1/inventory/{productId}/on-hand`          | SUM of stock_movements (never a mutable column)      |
+| GET    | `/api/v1/inventory/report`                       | Store stock report (every product, derived on-hand)  |
 | GET    | `/healthz`                                       | No auth                                              |
 
 Domain rule violations (`Sale not fully paid`, `Currency mismatch`, …) surface
@@ -280,6 +285,23 @@ drops in behind `IFiscalizationProvider` later; until then a **fake/training pro
   flipping to **Failed** after `SyncMaxAttempts`. With the fake it's instant success.
 - The thermal receipt prints the CUIN + the QR payload string (native ESC/POS QR raster comes with
   the printer driver); the HTML preview renders the QR target as a link.
+
+## Back-office data core (step 8)
+
+Product/price management and stock receiving — API + domain only (no admin UI yet), holding the
+invariants (UUIDv7 ids, TenantId+StoreId on every row, append-only stock, on-hand always derived).
+
+- **Products:** create validates SKU unique and barcode unique (when present) within the store, price
+  ≥ 0. Update edits name/barcode/unit/tax-class/active. **Deactivate is soft** (`IsActive=false`,
+  never a hard delete); list/search default to active, `?includeInactive=true` shows all.
+- **Pricing is never silent:** `PUT /products/{id}/price` raises a **`ProductPriceChanged`** domain
+  event (old/new price, who, when) to the outbox — audit + the seam for central pricing (M2). The
+  current `Price` stays on the product for fast lookup. (Effective-dated price lists arrive with S4.)
+- **Stock receiving:** `POST /inventory/receive` (positive qty; reason Purchase/OpeningBalance/Adjustment;
+  optional supplier/GRN Reference) and `POST /inventory/adjust` (signed qty, reason Adjustment) each
+  append exactly **one immutable `StockMovement`** — never an edit. Sales already write the OUT rows.
+- **On-hand is always derived:** `GET /inventory/{id}/on-hand` and `GET /inventory/report` are
+  `SUM(QuantityDelta)` over the ledger; there is no stored on-hand/quantity column anywhere.
 
 ## Roadmap (anticipated in design choices)
 - Single-store supermarket: S1 multi-lane foundation, S2 weighed goods + scales, S3 cash office,

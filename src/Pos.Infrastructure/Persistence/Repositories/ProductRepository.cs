@@ -24,9 +24,9 @@ internal sealed class ProductRepository : IProductRepository
             .Where(p => p.TenantId == tenantId && p.StoreId == storeId && p.Barcode == barcode)
             .FirstOrDefaultAsync(ct);
 
-    public async Task<IReadOnlyList<Product>> ListAsync(Guid tenantId, Guid storeId, CancellationToken ct = default) =>
+    public async Task<IReadOnlyList<Product>> ListAsync(Guid tenantId, Guid storeId, bool includeInactive = false, CancellationToken ct = default) =>
         await _db.Products
-            .Where(p => p.TenantId == tenantId && p.StoreId == storeId)
+            .Where(p => p.TenantId == tenantId && p.StoreId == storeId && (includeInactive || p.IsActive))
             .OrderBy(p => p.Name)
             .ToListAsync(ct);
 

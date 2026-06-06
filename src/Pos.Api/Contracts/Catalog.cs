@@ -11,6 +11,13 @@ public sealed record CreateProductRequest(
     string? Barcode = null,
     TaxClass TaxClass = TaxClass.StandardRated);
 
+public sealed record UpdateProductRequest(
+    string Name,
+    string? Barcode,
+    UnitOfMeasure UnitOfMeasure,
+    TaxClass TaxClass,
+    bool IsActive);
+
 public sealed record RepriceProductRequest(decimal Amount, string Currency);
 
 public sealed record MoneyDto(decimal Amount, string Currency);

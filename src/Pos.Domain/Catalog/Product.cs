@@ -1,5 +1,6 @@
 using Pos.SharedKernel;
 using Pos.SharedKernel.Ids;
+using Pos.Domain.Catalog.Events;
 
 namespace Pos.Domain.Catalog;
 
@@ -61,12 +62,31 @@ public sealed class Product : AggregateRoot, ITenantScoped, IStoreScoped
     private static string? NormalizeBarcode(string? barcode)
         => string.IsNullOrWhiteSpace(barcode) ? null : barcode.Trim();
 
-    public void Reprice(Money newPrice)
+    /// <summary>Edit the catalogue details (not price — price changes go through <see cref="Reprice"/>).</summary>
+    public void UpdateDetails(string name, string? barcode, UnitOfMeasure unit, TaxClass taxClass)
+    {
+        if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("Name is required.", nameof(name));
+        Name = name.Trim();
+        Barcode = NormalizeBarcode(barcode);
+        UnitOfMeasure = unit;
+        TaxClass = taxClass;
+    }
+
+    /// <summary>
+    /// Change the price. Never silent: a real change RAISES <see cref="ProductPriceChanged"/> (drained
+    /// to the outbox for audit + central-pricing seam). The new price stays on the product for fast
+    /// lookup. A no-op (same amount) raises nothing.
+    /// </summary>
+    public void Reprice(Money newPrice, Guid changedBy)
     {
         if (newPrice.Currency != Price.Currency)
             throw new InvalidOperationException("Currency mismatch on reprice.");
         if (newPrice.Amount < 0) throw new ArgumentOutOfRangeException(nameof(newPrice));
+        if (newPrice.Amount == Price.Amount) return; // unchanged — don't emit a spurious event
+
+        var old = Price;
         Price = newPrice;
+        Raise(new ProductPriceChanged(Id, TenantId, StoreId, old.Amount, newPrice.Amount, Price.Currency, changedBy));
     }
 
     public void Deactivate() => IsActive = false;
