@@ -315,6 +315,25 @@ invariants (UUIDv7 ids, TenantId+StoreId on every row, append-only stock, on-han
 - **On-hand is always derived:** `GET /inventory/{id}/on-hand` and `GET /inventory/report` are
   `SUM(QuantityDelta)` over the ledger; there is no stored on-hand/quantity column anywhere.
 
+## Back office — Blazor Server admin (step 10)
+
+A manager-gated admin UI **hosted inside the store-server process** (`Pos.Api`) — one on-prem
+deployable, splittable later. Static server-side-rendered Razor Components + form posts; it reuses the
+**same Application services** as the JSON API (`ProductService`, `StockService`, `AuthService`), so
+there's no duplicated business logic.
+
+- Browse to the store server root (e.g. `http://localhost:5080/`). Sign in at `/login` with a Manager
+  **username + password** (the bootstrap `manager` / `ChangeMe!123`; first login forces a change).
+- **Cookie auth** (scheme `Cookies`), separate from the till/API's JWT bearer. Every page is gated by
+  the `BackOfficeManager` policy (cookie + Manager role); a non-manager is bounced to `/login`.
+- **Screens:** Products (search, create/edit, price change → `ProductPriceChanged` to the outbox,
+  soft activate/deactivate with include-inactive), Stock (receive / signed adjustments → immutable
+  `StockMovement`, on-hand report = SUM of movements), Cashiers (create with PIN + role, reset PIN,
+  deactivate/reactivate).
+- **Brand:** navy `#16223f`, accent `#4D8BFF`, corebalt favicon + sidebar logo.
+- Form posts go to `/backoffice/*` endpoints (antiforgery protected). On-prem on a LAN; the cookie
+  session lasts a shift.
+
 ## Roadmap (anticipated in design choices)
 - Single-store supermarket: S1 multi-lane foundation, S2 weighed goods + scales, S3 cash office,
   S4 promotions + loyalty, S5 procurement.

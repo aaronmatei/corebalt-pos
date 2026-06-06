@@ -29,14 +29,15 @@ Offline-first: a till/branch must keep selling when the network drops.
 - `src/Pos.Domain` — Sales (Sale/SaleLine/Tender), Inventory (StockMovement), Catalog (Product),
   Payments (MpesaPayment — the M-Pesa reconciliation ledger), Identity (User/UserRole)
 - `src/Pos.Application` — ports (repositories, IUnitOfWork, IClock, **IMpesaClient**, IPasswordHasher,
-  ITokenIssuer, IUserRepository) + use cases `CheckoutService`, `MpesaPaymentService`, `AuthService`;
-  `Receipts/` (ReceiptModel projection + renderers); `Fiscalization/`; `Identity/` (AuthService,
-  StoreServerOptions, PosClaims)
+  ITokenIssuer, IUserRepository) + use cases `CheckoutService`, `MpesaPaymentService`, `AuthService`,
+  and `ProductService` + `StockService` (single home for product/stock orchestration, shared by the
+  API and the back-office); `Receipts/`; `Fiscalization/`; `Identity/` (AuthService, StoreServerOptions, PosClaims)
 - `src/Pos.Infrastructure` — PosDbContext, EF configurations, repositories, outbox interceptor,
   **DarajaMpesaClient** (Mpesa/), **FakeEtimsProvider** (Fiscalization/), **JwtTokenIssuer +
   AspNetPasswordHasher** (Identity/), DI; `Persistence/Migrations`
-- `src/Pos.Api` — ASP.NET Core 10 minimal-API store-server host: auth + catalog + checkout + inventory
-  over HTTP. Thin endpoints; JWT bearer auth + role policies + dev-header bypass (`Auth/`)
+- `src/Pos.Api` — ASP.NET Core 10 store-server host: minimal-API (auth + catalog + checkout + inventory,
+  JWT bearer + role policies + dev-header bypass, `Auth/`) PLUS the **Blazor Server back-office**
+  (`Components/` static-SSR pages, `BackOffice/` form-post endpoints, cookie auth, `wwwroot/`)
 - `src/Pos.Till` — Avalonia (.NET 10, MVVM/CommunityToolkit) desktop till. A **pure HTTP client**
   of `Pos.Api`: it references no domain/application/infrastructure assembly and owns its own wire
   DTOs. PIN login screen → JWT held for the session; till screen (catalogue + scan + cart + tender +
@@ -56,7 +57,7 @@ dotnet ef database update --project src/Pos.Infrastructure --startup-project sam
 dotnet run  --project samples/Pos.Persistence.Demo   # save→reload a sale, print the outbox row
 dotnet run  --project src/Pos.Api                    # store-server host on http://localhost:5080; auto-applies migrations in Development
 dotnet run  --project src/Pos.Till                   # Avalonia till (pure API client); talks to :5080
-dotnet test                                          # domain + API integration tests (66)
+dotnet test                                          # domain + API integration tests (71)
 ```
 Receipt header comes from the `Store` config section (LegalName/KraPin/BranchName/BranchAddress/
 Phone/VatNumber/Currency) — config-swappable, defaults to Corebalt Technologies.
@@ -74,8 +75,9 @@ Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Databa
   step 5 (real M-Pesa via Daraja STK push, as an async pending→confirmed flow), and step 6
   (fiscal receipt incl. human receipt numbers), step 7 (eTIMS fiscalization SEAM — eTIMS-ready,
   NOT real fiscalization), step 8 (back-office data core: product/price management + stock
-  receiving), and step 9 (authentication & identity: custom User aggregate + JWT, role policies,
-  till PIN login). All six projects target `net10.0`; `dotnet test` is green at 66 (29 domain + 37 API).
+  receiving), step 9 (authentication & identity: custom User aggregate + JWT, role policies,
+  till PIN login), and step 10 (Blazor Server **back-office** admin, manager-gated, hosted in the
+  store-server process). All six projects target `net10.0`; `dotnet test` is green at 71 (29 domain + 42 API).
 - **eTIMS seam (mirrors the M-Pesa provider pattern):** `IFiscalizationProvider.SignAsync/SyncAsync`
   with `FakeEtimsProvider` (training mode — deterministic "TEST-…" CUIN from the receipt number, fake
   signature, KRA-shaped QR URL; SyncAsync a logged no-op). Config "Etims": Enabled, Mode (Vscu/Oscu),
@@ -139,6 +141,14 @@ Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Databa
   default, never in Production): `DevHeaderAuthMiddleware` turns `X-Tenant/Store/User-Id` headers into
   a Manager principal — used by the tests + local curling. `GET /healthz` + the M-Pesa callback are
   the only anonymous routes. Domain-rule violations surface as 409, argument validation as 400.
+- **Back-office (Blazor Server, manager-gated, hosted IN `Pos.Api`):** static-SSR Razor Components
+  (`Components/Pages` — Products / Stock / Cashiers, + Login / ChangePassword) over **cookie** auth
+  (scheme `Cookies`, separate from the API's JWT). Login via username+password (`AuthService.
+  ValidatePasswordAsync`); pages gated by the `BackOfficeManager` policy (cookie + Manager role) →
+  non-managers bounce to `/login`; bootstrap manager's force-password-change still applies. Forms post
+  to `/backoffice/*` endpoints (`BackOffice/BackOfficeEndpoints.cs`, antiforgery on) that call the SAME
+  `ProductService`/`StockService`/`AuthService` as the API — NO duplicated logic. Brand: navy #16223f /
+  accent #4D8BFF, corebalt favicon + logo (`wwwroot/`). It's one on-prem deployable; can be split later.
 - **Caveat:** a clean `dotnet build` / `dotnet test` against a live Postgres has not been
   re-confirmed in this environment — run them before starting new work. Stale `net8.0` artifacts
   linger under some `bin`/`obj` folders and can be ignored (or cleaned).

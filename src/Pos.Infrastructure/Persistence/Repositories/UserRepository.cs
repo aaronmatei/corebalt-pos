@@ -26,4 +26,10 @@ internal sealed class UserRepository : IUserRepository
 
     public Task<bool> UsernameExistsAsync(Guid tenantId, string username, CancellationToken ct = default) =>
         _db.Users.AnyAsync(u => u.TenantId == tenantId && u.Username == username, ct);
+
+    public async Task<IReadOnlyList<User>> ListAsync(Guid tenantId, Guid storeId, CancellationToken ct = default) =>
+        await _db.Users
+            .Where(u => u.TenantId == tenantId && u.StoreId == storeId)
+            .OrderBy(u => u.Name)
+            .ToListAsync(ct);
 }

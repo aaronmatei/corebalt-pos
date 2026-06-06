@@ -1,0 +1,63 @@
+@page "/"
+@page "/products"
+@attribute [Authorize(Policy = "BackOfficeManager")]
+@inject ProductService ProductSvc
+@inject Pos.Application.Receipts.StoreInfo Store
+
+<h1>Products</h1>
+
+<form method="get" action="/products" class="toolbar">
+    <input name="q" value="@Q" placeholder="Search name / SKU / barcode" style="max-width:280px" />
+    <label style="margin:0;display:flex;align-items:center;gap:6px;color:var(--ink)">
+        <input type="checkbox" name="includeInactive" value="true" checked="@IncludeInactive" style="width:auto" />
+        Include inactive
+    </label>
+    <button type="submit">Search</button>
+    <a class="btn" href="/products/new">New product</a>
+</form>
+
+@if (!string.IsNullOrEmpty(Error)) { <p class="error">@Error</p> }
+
+<table>
+    <thead>
+        <tr><th>Name</th><th>SKU</th><th>Barcode</th><th>Unit</th><th>Tax</th><th style="text-align:right">Price</th><th>Status</th><th></th></tr>
+    </thead>
+    <tbody>
+        @foreach (var p in _items)
+        {
+            <tr class="@(p.IsActive ? "" : "inactive")">
+                <td>@p.Name</td>
+                <td>@p.Sku</td>
+                <td>@(p.Barcode ?? "—")</td>
+                <td>@p.UnitOfMeasure</td>
+                <td>@p.TaxClass</td>
+                <td style="text-align:right">@Store.Currency @p.Price.Amount.ToString("#,##0.00", CultureInfo.InvariantCulture)</td>
+                <td>@(p.IsActive ? "Active" : "Inactive")</td>
+                <td><a href="@($"/products/{p.Id}")">Edit</a></td>
+            </tr>
+        }
+        @if (_items.Count == 0)
+        {
+            <tr><td colspan="8" style="color:var(--muted)">No products.</td></tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    [SupplyParameterFromQuery(Name = "q")] public string? Q { get; set; }
+    [SupplyParameterFromQuery] public bool IncludeInactive { get; set; }
+    [SupplyParameterFromQuery] public string? Error { get; set; }
+
+    private IReadOnlyList<Product> _items = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var all = await ProductSvc.ListAsync(IncludeInactive);
+        _items = string.IsNullOrWhiteSpace(Q)
+            ? all
+            : all.Where(p =>
+                p.Name.Contains(Q, StringComparison.OrdinalIgnoreCase) ||
+                p.Sku.Contains(Q, StringComparison.OrdinalIgnoreCase) ||
+                (p.Barcode?.Contains(Q, StringComparison.OrdinalIgnoreCase) ?? false)).ToList();
+    }
+}

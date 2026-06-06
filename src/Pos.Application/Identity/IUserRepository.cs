@@ -10,4 +10,5 @@ public interface IUserRepository
     Task<User?> FindByStaffCodeAsync(Guid tenantId, Guid storeId, string staffCode, CancellationToken ct = default);
     Task<bool> AnyManagerExistsAsync(Guid tenantId, Guid storeId, CancellationToken ct = default);
     Task<bool> UsernameExistsAsync(Guid tenantId, string username, CancellationToken ct = default);
+    Task<IReadOnlyList<User>> ListAsync(Guid tenantId, Guid storeId, CancellationToken ct = default);
 }

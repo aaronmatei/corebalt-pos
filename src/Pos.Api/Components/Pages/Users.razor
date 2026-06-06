@@ -1,0 +1,74 @@
+@page "/users"
+@attribute [Authorize(Policy = "BackOfficeManager")]
+@inject AuthService Auth
+
+<h1>Cashiers &amp; users</h1>
+
+@if (!string.IsNullOrEmpty(Error)) { <p class="error">@Error</p> }
+
+<div class="card">
+    <h2>Add user</h2>
+    <form method="post" action="/backoffice/users">
+        <Csrf />
+        <div class="row">
+            <div><label>Name</label><input name="name" required /></div>
+            <div><label>Staff code</label><input name="staffCode" required /></div>
+            <div><label>PIN</label><input name="pin" inputmode="numeric" required /></div>
+            <div>
+                <label>Role</label>
+                <select name="role">
+                    <option value="Cashier">Cashier</option>
+                    <option value="Supervisor">Supervisor</option>
+                    <option value="Manager">Manager</option>
+                </select>
+            </div>
+        </div>
+        <div style="margin-top:14px"><button type="submit">Create user</button></div>
+    </form>
+</div>
+
+<table>
+    <thead><tr><th>Name</th><th>Staff code</th><th>Role</th><th>Status</th><th>Reset PIN</th><th></th></tr></thead>
+    <tbody>
+        @foreach (var u in _users)
+        {
+            <tr class="@(u.IsActive ? "" : "inactive")">
+                <td>@u.Name</td>
+                <td>@u.StaffCode</td>
+                <td>@u.Role</td>
+                <td>@(u.IsActive ? "Active" : "Inactive")</td>
+                <td>
+                    <form method="post" action="@($"/backoffice/users/{u.Id}/reset-pin")" style="display:flex;gap:6px">
+                        <Csrf />
+                        <input name="pin" inputmode="numeric" placeholder="New PIN" style="max-width:110px" required />
+                        <button type="submit" class="ghost">Set</button>
+                    </form>
+                </td>
+                <td>
+                    @if (u.IsActive)
+                    {
+                        <form method="post" action="@($"/backoffice/users/{u.Id}/deactivate")">
+                            <Csrf />
+                            <button type="submit" class="danger">Deactivate</button>
+                        </form>
+                    }
+                    else
+                    {
+                        <form method="post" action="@($"/backoffice/users/{u.Id}/reactivate")">
+                            <Csrf />
+                            <button type="submit" class="ghost">Reactivate</button>
+                        </form>
+                    }
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    [SupplyParameterFromQuery] public string? Error { get; set; }
+
+    private IReadOnlyList<User> _users = [];
+
+    protected override async Task OnInitializedAsync() => _users = await Auth.ListUsersAsync();
+}

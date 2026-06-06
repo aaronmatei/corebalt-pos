@@ -1,0 +1,26 @@
+@inherits LayoutComponentBase
+
+<div class="layout">
+    <AuthorizeView>
+        <Authorized>
+            <aside class="sidebar">
+                <div class="brand">
+                    <img src="/favicon.ico" class="logo" alt="Corebalt" />
+                    <span>Corebalt</span>
+                </div>
+                <nav>
+                    <NavLink href="/products" Match="NavLinkMatch.Prefix">Products</NavLink>
+                    <NavLink href="/stock">Stock</NavLink>
+                    <NavLink href="/users">Cashiers</NavLink>
+                </nav>
+                <form method="post" action="/backoffice/logout" class="logout">
+                    <Csrf />
+                    <button type="submit">Sign out (@context.User.Identity?.Name)</button>
+                </form>
+            </aside>
+        </Authorized>
+    </AuthorizeView>
+    <main class="content">
+        @Body
+    </main>
+</div>

@@ -1,0 +1,81 @@
+@page "/stock"
+@attribute [Authorize(Policy = "BackOfficeManager")]
+@inject StockService StockSvc
+@inject ProductService ProductSvc
+
+<h1>Stock</h1>
+
+@if (!string.IsNullOrEmpty(Error)) { <p class="error">@Error</p> }
+
+<div class="row" style="align-items:stretch">
+    <div class="card" style="flex:1">
+        <h2>Receive stock</h2>
+        <form method="post" action="/backoffice/stock/receive">
+            <Csrf />
+            <label>Product</label>@ProductSelect()
+            <div class="row">
+                <div><label>Quantity</label><input name="quantity" type="number" step="0.001" min="0" value="0" required /></div>
+                <div>
+                    <label>Reason</label>
+                    <select name="reason">
+                        <option value="Purchase">Purchase</option>
+                        <option value="OpeningBalance">Opening balance</option>
+                        <option value="Adjustment">Adjustment</option>
+                    </select>
+                </div>
+            </div>
+            <label>Reference (supplier / GRN / note)</label><input name="reference" />
+            <div style="margin-top:14px"><button type="submit">Receive</button></div>
+        </form>
+    </div>
+
+    <div class="card" style="flex:1">
+        <h2>Adjust (stock-take / shrinkage)</h2>
+        <form method="post" action="/backoffice/stock/adjust">
+            <Csrf />
+            <label>Product</label>@ProductSelect()
+            <label>Signed quantity (e.g. -2 for shrinkage)</label>
+            <input name="quantity" type="number" step="0.001" value="0" required />
+            <label>Reference</label><input name="reference" />
+            <div style="margin-top:14px"><button type="submit">Adjust</button></div>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <h2>On-hand report</h2>
+    <table>
+        <thead><tr><th>Product</th><th>SKU</th><th>Unit</th><th>Status</th><th style="text-align:right">On hand</th></tr></thead>
+        <tbody>
+            @foreach (var r in _report)
+            {
+                <tr class="@(r.IsActive ? "" : "inactive")">
+                    <td>@r.Name</td><td>@r.Sku</td><td>@r.Unit</td>
+                    <td>@(r.IsActive ? "Active" : "Inactive")</td>
+                    <td style="text-align:right">@r.OnHand.ToString("#,##0.###", CultureInfo.InvariantCulture)</td>
+                </tr>
+            }
+            @if (_report.Count == 0) { <tr><td colspan="5" style="color:var(--muted)">No products.</td></tr> }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [SupplyParameterFromQuery] public string? Error { get; set; }
+
+    private IReadOnlyList<Product> _products = [];
+    private IReadOnlyList<StockReportLine> _report = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _products = await ProductSvc.ListAsync(includeInactive: false);
+        _report = await StockSvc.GetReportAsync();
+    }
+
+    private RenderFragment ProductSelect() => @<select name="productId" required>
+        @foreach (var p in _products)
+        {
+            <option value="@p.Id">@p.Name (@p.Sku)</option>
+        }
+    </select>;
+}

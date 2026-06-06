@@ -36,10 +36,53 @@ public sealed class AuthService
 
     public async Task<AccessToken?> PasswordLoginAsync(string username, string password, CancellationToken ct = default)
     {
+        var user = await ValidatePasswordAsync(username, password, ct);
+        return user is null ? null : _tokens.Issue(user);
+    }
+
+    /// <summary>Verify a username/password and return the user (null on any failure). Used by the
+    /// back-office cookie login, which builds its own principal rather than a JWT.</summary>
+    public async Task<User?> ValidatePasswordAsync(string username, string password, CancellationToken ct = default)
+    {
         if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password)) return null;
         var user = await _users.FindByUsernameAsync(_server.TenantId, username.Trim().ToLowerInvariant(), ct);
         if (user is null || !user.IsActive || user.PasswordHash is null) return null;
-        return _hasher.Verify(user.PasswordHash, password) ? _tokens.Issue(user) : null;
+        return _hasher.Verify(user.PasswordHash, password) ? user : null;
+    }
+
+    public Task<IReadOnlyList<User>> ListUsersAsync(CancellationToken ct = default) =>
+        _users.ListAsync(_server.TenantId, _server.StoreId, ct);
+
+    public Task<User?> GetUserAsync(Guid userId, CancellationToken ct = default) =>
+        _users.GetByIdAsync(_server.TenantId, _server.StoreId, userId, ct);
+
+    /// <summary>Manager action: reset a user's till PIN.</summary>
+    public async Task<bool> ResetPinAsync(Guid userId, string newPin, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(newPin)) throw new ArgumentException("PIN is required.", nameof(newPin));
+        var user = await _users.GetByIdAsync(_server.TenantId, _server.StoreId, userId, ct);
+        if (user is null) return false;
+        user.SetPinHash(_hasher.Hash(newPin));
+        await _uow.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<bool> DeactivateUserAsync(Guid userId, CancellationToken ct = default)
+    {
+        var user = await _users.GetByIdAsync(_server.TenantId, _server.StoreId, userId, ct);
+        if (user is null) return false;
+        user.Deactivate();
+        await _uow.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<bool> ReactivateUserAsync(Guid userId, CancellationToken ct = default)
+    {
+        var user = await _users.GetByIdAsync(_server.TenantId, _server.StoreId, userId, ct);
+        if (user is null) return false;
+        user.Reactivate();
+        await _uow.SaveChangesAsync(ct);
+        return true;
     }
 
     public async Task<User> CreateUserAsync(string name, string username, string staffCode, UserRole role,

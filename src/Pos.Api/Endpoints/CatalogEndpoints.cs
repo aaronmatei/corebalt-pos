@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Routing;
 using Pos.Api.Contracts;
 using Pos.Application.Abstractions;
 using Pos.Application.Catalog;
-using Pos.Domain.Catalog;
 using Pos.SharedKernel;
 
 namespace Pos.Api.Endpoints;
@@ -15,124 +14,56 @@ internal static class CatalogEndpoints
         var g = app.MapGroup("/products").WithTags("Catalog");                          // reads: any authenticated user
         var mgr = app.MapGroup("/products").WithTags("Catalog").RequireAuthorization("Manager"); // writes: Manager only
 
-        mgr.MapPost("/", async (
-            CreateProductRequest req,
-            ICurrentContext ctx,
-            IProductRepository products,
-            IUnitOfWork uow,
-            CancellationToken ct) =>
+        // All product write logic lives in ProductService (shared with the Blazor back-office); these
+        // endpoints just map HTTP. Conflicts surface as 409 via the DomainExceptionHandler.
+        mgr.MapPost("/", async (CreateProductRequest req, ProductService svc, CancellationToken ct) =>
         {
-            // SKU unique per tenant, barcode unique per tenant when present (DB indexes are the backstop).
-            if (await products.SkuExistsAsync(ctx.TenantId, req.Sku.Trim(), ct: ct))
-                return Results.Problem($"A product with SKU '{req.Sku.Trim()}' already exists.", statusCode: StatusCodes.Status409Conflict);
-            var newBarcode = req.Barcode?.Trim();
-            if (!string.IsNullOrWhiteSpace(newBarcode) &&
-                await products.BarcodeExistsAsync(ctx.TenantId, newBarcode, ct: ct))
-                return Results.Problem($"A product with barcode '{newBarcode}' already exists.", statusCode: StatusCodes.Status409Conflict);
-
-            var product = Product.Create(
-                ctx.TenantId, ctx.StoreId,
-                req.Sku, req.Name,
-                new Money(req.PriceAmount, req.PriceCurrency),
-                req.UnitOfMeasure,
-                req.Barcode,
-                req.TaxClass);
-            await products.AddAsync(product, ct);
-            await uow.SaveChangesAsync(ct);
+            var product = await svc.CreateAsync(
+                req.Sku, req.Name, new Money(req.PriceAmount, req.PriceCurrency),
+                req.UnitOfMeasure, req.Barcode, req.TaxClass, ct);
             return Results.Created($"/api/v1/products/{product.Id}", product.ToResponse());
         });
 
-        g.MapGet("/", async (
-            ICurrentContext ctx,
-            IProductRepository products,
-            CancellationToken ct,
-            bool includeInactive = false) =>
+        g.MapGet("/", async (ProductService svc, CancellationToken ct, bool includeInactive = false) =>
         {
-            var list = await products.ListAsync(ctx.TenantId, ctx.StoreId, includeInactive, ct);
+            var list = await svc.ListAsync(includeInactive, ct);
             return Results.Ok(list.Select(p => p.ToResponse()).ToList());
         });
 
-        g.MapGet("/{id:guid}", async (
-            Guid id,
-            ICurrentContext ctx,
-            IProductRepository products,
-            CancellationToken ct) =>
+        g.MapGet("/{id:guid}", async (Guid id, ProductService svc, CancellationToken ct) =>
         {
-            var product = await products.GetAsync(ctx.TenantId, ctx.StoreId, id, ct);
+            var product = await svc.GetAsync(id, ct);
             return product is null ? Results.NotFound() : Results.Ok(product.ToResponse());
         });
 
-        g.MapGet("/by-sku/{sku}", async (
-            string sku,
-            ICurrentContext ctx,
-            IProductRepository products,
-            CancellationToken ct) =>
+        g.MapGet("/by-sku/{sku}", async (string sku, ICurrentContext ctx, IProductRepository products, CancellationToken ct) =>
         {
             var product = await products.FindBySkuAsync(ctx.TenantId, ctx.StoreId, sku, ct);
             return product is null ? Results.NotFound() : Results.Ok(product.ToResponse());
         });
 
-        g.MapGet("/barcode/{barcode}", async (
-            string barcode,
-            ICurrentContext ctx,
-            IProductRepository products,
-            CancellationToken ct) =>
+        g.MapGet("/barcode/{barcode}", async (string barcode, ICurrentContext ctx, IProductRepository products, CancellationToken ct) =>
         {
             var product = await products.FindByBarcodeAsync(ctx.TenantId, ctx.StoreId, barcode, ct);
             return product is null ? Results.NotFound() : Results.Ok(product.ToResponse());
         });
 
-        mgr.MapPut("/{id:guid}", async (
-            Guid id,
-            UpdateProductRequest req,
-            ICurrentContext ctx,
-            IProductRepository products,
-            IUnitOfWork uow,
-            CancellationToken ct) =>
+        mgr.MapPut("/{id:guid}", async (Guid id, UpdateProductRequest req, ProductService svc, CancellationToken ct) =>
         {
-            var product = await products.GetAsync(ctx.TenantId, ctx.StoreId, id, ct);
-            if (product is null) return Results.NotFound();
-
-            // Barcode stays unique per tenant when present (ignore the product's own row).
-            var newBarcode = req.Barcode?.Trim();
-            if (!string.IsNullOrWhiteSpace(newBarcode) &&
-                await products.BarcodeExistsAsync(ctx.TenantId, newBarcode, excludingProductId: id, ct: ct))
-                return Results.Problem($"A product with barcode '{newBarcode}' already exists.", statusCode: StatusCodes.Status409Conflict);
-
-            product.UpdateDetails(req.Name, req.Barcode, req.UnitOfMeasure, req.TaxClass);
-            if (req.IsActive) product.Reactivate(); else product.Deactivate();
-            await uow.SaveChangesAsync(ct);
-            return Results.Ok(product.ToResponse());
+            var product = await svc.UpdateAsync(id, req.Name, req.Barcode, req.UnitOfMeasure, req.TaxClass, req.IsActive, ct);
+            return product is null ? Results.NotFound() : Results.Ok(product.ToResponse());
         });
 
-        mgr.MapPost("/{id:guid}/deactivate", async (
-            Guid id,
-            ICurrentContext ctx,
-            IProductRepository products,
-            IUnitOfWork uow,
-            CancellationToken ct) =>
+        mgr.MapPost("/{id:guid}/deactivate", async (Guid id, ProductService svc, CancellationToken ct) =>
         {
-            var product = await products.GetAsync(ctx.TenantId, ctx.StoreId, id, ct);
-            if (product is null) return Results.NotFound();
-            product.Deactivate(); // soft delete — never hard-delete a catalogue row
-            await uow.SaveChangesAsync(ct);
-            return Results.Ok(product.ToResponse());
+            var product = await svc.SetActiveAsync(id, active: false, ct); // soft delete — never hard-delete
+            return product is null ? Results.NotFound() : Results.Ok(product.ToResponse());
         });
 
-        mgr.MapPut("/{id:guid}/price", async (
-            Guid id,
-            RepriceProductRequest req,
-            ICurrentContext ctx,
-            IProductRepository products,
-            IUnitOfWork uow,
-            CancellationToken ct) =>
+        mgr.MapPut("/{id:guid}/price", async (Guid id, RepriceProductRequest req, ProductService svc, CancellationToken ct) =>
         {
-            var product = await products.GetAsync(ctx.TenantId, ctx.StoreId, id, ct);
-            if (product is null) return Results.NotFound();
-            // A real change raises ProductPriceChanged → outbox (audit + central-pricing seam).
-            product.Reprice(new Money(req.Amount, req.Currency), ctx.UserId);
-            await uow.SaveChangesAsync(ct);
-            return Results.NoContent();
+            var product = await svc.RepriceAsync(id, new Money(req.Amount, req.Currency), ct);
+            return product is null ? Results.NotFound() : Results.NoContent();
         });
 
         return app;

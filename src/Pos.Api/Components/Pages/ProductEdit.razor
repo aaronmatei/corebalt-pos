@@ -1,0 +1,100 @@
+@page "/products/new"
+@page "/products/{Id:guid}"
+@attribute [Authorize(Policy = "BackOfficeManager")]
+@inject ProductService ProductSvc
+@inject Pos.Application.Receipts.StoreInfo Store
+
+@if (IsNew)
+{
+    <h1>New product</h1>
+    @if (!string.IsNullOrEmpty(Error)) { <p class="error">@Error</p> }
+    <div class="card">
+        <form method="post" action="/backoffice/products">
+            <Csrf />
+            <div class="row">
+                <div><label>SKU</label><input name="sku" required /></div>
+                <div><label>Name</label><input name="name" required /></div>
+            </div>
+            <div class="row">
+                <div><label>Barcode (optional)</label><input name="barcode" /></div>
+                <div><label>Unit</label>@UnitSelect(UnitOfMeasure.Each)</div>
+                <div><label>Tax class</label>@TaxSelect(TaxClass.StandardRated)</div>
+                <div><label>Price (@Store.Currency)</label><input name="priceAmount" type="number" step="0.01" min="0" value="0" required /></div>
+            </div>
+            <div style="margin-top:14px"><button type="submit">Create product</button> <a class="btn ghost" href="/products">Cancel</a></div>
+        </form>
+    </div>
+}
+else if (_p is null)
+{
+    <h1>Product</h1>
+    <p class="error">Product not found.</p>
+}
+else
+{
+    <h1>Edit @_p.Name</h1>
+    @if (!string.IsNullOrEmpty(Error)) { <p class="error">@Error</p> }
+
+    <div class="card">
+        <h2>Details</h2>
+        <form method="post" action="@($"/backoffice/products/{_p.Id}")">
+            <Csrf />
+            <div class="row">
+                <div><label>SKU (fixed)</label><input value="@_p.Sku" disabled /></div>
+                <div><label>Name</label><input name="name" value="@_p.Name" required /></div>
+            </div>
+            <div class="row">
+                <div><label>Barcode</label><input name="barcode" value="@_p.Barcode" /></div>
+                <div><label>Unit</label>@UnitSelect(_p.UnitOfMeasure)</div>
+                <div><label>Tax class</label>@TaxSelect(_p.TaxClass)</div>
+                <div>
+                    <label>Status</label>
+                    <select name="isActive">
+                        <option value="true" selected="@_p.IsActive">Active</option>
+                        <option value="false" selected="@(!_p.IsActive)">Inactive</option>
+                    </select>
+                </div>
+            </div>
+            <div style="margin-top:14px"><button type="submit">Save</button> <a class="btn ghost" href="/products">Back</a></div>
+        </form>
+    </div>
+
+    <div class="card">
+        <h2>Price</h2>
+        <p style="color:var(--muted);margin-top:0">Current: @Store.Currency @_p.Price.Amount.ToString("#,##0.00", CultureInfo.InvariantCulture). A change is audited (ProductPriceChanged → outbox).</p>
+        <form method="post" action="@($"/backoffice/products/{_p.Id}/price")">
+            <Csrf />
+            <div class="row">
+                <div><label>New price (@Store.Currency)</label><input name="amount" type="number" step="0.01" min="0" value="@_p.Price.Amount.ToString("0.00", CultureInfo.InvariantCulture)" required /></div>
+            </div>
+            <div style="margin-top:14px"><button type="submit">Update price</button></div>
+        </form>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    [SupplyParameterFromQuery] public string? Error { get; set; }
+
+    private bool IsNew => Id == Guid.Empty;
+    private Product? _p;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!IsNew) _p = await ProductSvc.GetAsync(Id);
+    }
+
+    private RenderFragment UnitSelect(UnitOfMeasure current) => @<select name="unit">
+        @foreach (var u in Enum.GetValues<UnitOfMeasure>())
+        {
+            <option value="@u" selected="@(u == current)">@u</option>
+        }
+    </select>;
+
+    private RenderFragment TaxSelect(TaxClass current) => @<select name="taxClass">
+        @foreach (var t in Enum.GetValues<TaxClass>())
+        {
+            <option value="@t" selected="@(t == current)">@t</option>
+        }
+    </select>;
+}

@@ -1,0 +1,9 @@
+@inject Microsoft.AspNetCore.Antiforgery.IAntiforgery Antiforgery
+@{
+    var token = Antiforgery.GetAndStoreTokens(Http!);
+}
+<input type="hidden" name="@token.FormFieldName" value="@token.RequestToken" />
+@code {
+    // HttpContext is available as a cascading parameter during static server-side rendering.
+    [CascadingParameter] public HttpContext? Http { get; set; }
+}
