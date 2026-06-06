@@ -17,6 +17,12 @@ public sealed class MpesaOptions
     public string CallbackUrl { get; set; } = "https://example.com/mpesa/callback"; // dev confirms via polling
     public string TransactionType { get; set; } = "CustomerPayBillOnline";
 
+    /// <summary>
+    /// DEV/DEMO ONLY: use the in-memory fake M-Pesa client (auto-confirms) instead of real Daraja, so
+    /// the till's Pay-with-M-Pesa completes without a device or the sandbox. Ignored in Production.
+    /// </summary>
+    public bool UseFake { get; set; }
+
     /// <summary>True once the secrets needed to actually call Daraja are present.</summary>
     public bool IsConfigured =>
         !string.IsNullOrWhiteSpace(ConsumerKey) &&
@@ -36,6 +42,7 @@ public sealed class MpesaOptions
         o.ShortCode      = Env("POS_MPESA_SHORTCODE")      ?? s["ShortCode"]      ?? o.ShortCode;
         o.CallbackUrl    = Env("POS_MPESA_CALLBACKURL")    ?? s["CallbackUrl"]    ?? o.CallbackUrl;
         o.TransactionType = s["TransactionType"] ?? o.TransactionType;
+        o.UseFake = ParseBool(Env("POS_MPESA_USEFAKE")) ?? ParseBool(s["UseFake"]) ?? false;
 
         // Trim: user-secrets / env values can pick up a stray trailing newline or space, which would
         // silently corrupt the Base64 password (and the OAuth Basic header) → Daraja rejection.
@@ -54,4 +61,6 @@ public sealed class MpesaOptions
         var v = Environment.GetEnvironmentVariable(name);
         return string.IsNullOrWhiteSpace(v) ? null : v;
     }
+
+    private static bool? ParseBool(string? v) => bool.TryParse(v, out var b) ? b : null;
 }

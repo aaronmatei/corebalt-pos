@@ -60,6 +60,8 @@ Receipt header comes from the `Store` config section (LegalName/KraPin/BranchNam
 Phone/VatNumber/Currency) — config-swappable, defaults to Corebalt Technologies.
 M-Pesa (Daraja) secrets are read from the `Mpesa` config section / user-secrets / `POS_MPESA_*` env
 (see README). Without them, M-Pesa initiate fails gracefully (tender → Failed); cash is unaffected.
+Dev/demo: `POS_MPESA_USEFAKE=true` (or `Mpesa:UseFake`) swaps in an auto-confirming in-memory M-Pesa
+client so the till's Pay-with-M-Pesa completes without Daraja/a device; ignored in Production.
 Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Database=pos;Username=postgres;Password=pos`).
 `Pos.Api.Tests` uses `POS_TEST_DB` (default same as above but `Database=pos_test`); the `pos_test` DB is created on first run if absent.
 

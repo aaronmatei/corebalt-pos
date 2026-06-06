@@ -220,6 +220,20 @@ number). Without credentials, `mpesa/checkout` fails gracefully (the tender is m
 till offers retry / cash) — cash checkout is unaffected. The test suite uses a fake `IMpesaClient`, so
 `dotnet test` needs **no** credentials and makes **no** network calls.
 
+### Dev fake provider (no Daraja, no device)
+
+The Daraja **sandbox** test number can't enter a PIN, so a real STK push there always ends in "DS
+timeout". For demos / UI testing, flip on the in-memory fake provider — it auto-confirms, so the
+till's **Pay with M-Pesa** completes on its own (initiate → poll → Confirmed → completed → fiscalized):
+
+```powershell
+$env:POS_MPESA_USEFAKE = "true"     # or "Mpesa:UseFake": true in appsettings.Development.json / user-secrets
+dotnet run --project src/Pos.Api
+```
+
+It's **dev-only** — `UseFake` is ignored when the environment is Production. A startup log warns when
+it's active, and every fake call logs a warning. Leave it off (default) to exercise real Daraja.
+
 ## Fiscal receipt (step 6)
 
 The receipt is a **deterministic projection over the completed, persisted sale** — never recomputed

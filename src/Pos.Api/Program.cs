@@ -27,8 +27,15 @@ builder.Services.AddScoped<CheckoutService>();
 // never hardcoded. Singleton client so its OAuth token cache survives across requests.
 var mpesaOptions = MpesaOptions.FromConfiguration(builder.Configuration);
 builder.Services.AddSingleton(mpesaOptions);
-builder.Services.AddSingleton<IMpesaClient>(_ =>
-    new DarajaMpesaClient(new HttpClient { BaseAddress = new Uri(mpesaOptions.BaseUrl) }, mpesaOptions));
+
+// DEV-ONLY fake provider toggle (Mpesa:UseFake / POS_MPESA_USEFAKE): auto-confirms STK so the till's
+// Pay-with-M-Pesa completes without Daraja or a real device. Never honored in Production.
+var useFakeMpesa = mpesaOptions.UseFake && !builder.Environment.IsProduction();
+if (useFakeMpesa)
+    builder.Services.AddSingleton<IMpesaClient, FakeMpesaClient>();
+else
+    builder.Services.AddSingleton<IMpesaClient>(_ =>
+        new DarajaMpesaClient(new HttpClient { BaseAddress = new Uri(mpesaOptions.BaseUrl) }, mpesaOptions));
 builder.Services.AddScoped<MpesaPaymentService>();
 
 // Receipt header config (config-swappable via the "Store" section) + the renderer service.
@@ -92,6 +99,9 @@ if (app.Environment.IsDevelopment())
     using var scope = app.Services.CreateScope();
     scope.ServiceProvider.GetRequiredService<PosDbContext>().Database.Migrate();
 }
+
+if (useFakeMpesa)
+    app.Logger.LogWarning("M-Pesa: using the in-memory FAKE provider (dev/demo). Real Daraja is bypassed — set Mpesa:UseFake=false to restore it.");
 
 app.UseExceptionHandler();
 app.MapOpenApi();
