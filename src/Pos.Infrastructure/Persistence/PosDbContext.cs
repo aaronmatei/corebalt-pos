@@ -1,0 +1,21 @@
+using Microsoft.EntityFrameworkCore;
+using Pos.Application.Abstractions;
+using Pos.Domain.Inventory;
+using Pos.Domain.Sales;
+using Pos.Infrastructure.Outbox;
+
+namespace Pos.Infrastructure.Persistence;
+
+public sealed class PosDbContext : DbContext, IUnitOfWork
+{
+    public PosDbContext(DbContextOptions<PosDbContext> options) : base(options) { }
+
+    public DbSet<Sale> Sales => Set<Sale>();
+    public DbSet<StockMovement> StockMovements => Set<StockMovement>();
+    public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(PosDbContext).Assembly);
+    }
+}
