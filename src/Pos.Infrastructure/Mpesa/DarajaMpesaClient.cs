@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Pos.Application.Payments;
 
 namespace Pos.Infrastructure.Mpesa;
@@ -17,16 +18,18 @@ public sealed class DarajaMpesaClient : IMpesaClient
 {
     private readonly HttpClient _http;
     private readonly MpesaOptions _o;
+    private readonly ILogger<DarajaMpesaClient> _log;
     private readonly SemaphoreSlim _tokenLock = new(1, 1);
     private string? _token;
     private DateTimeOffset _tokenExpiresAt;
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
-    public DarajaMpesaClient(HttpClient http, MpesaOptions options)
+    public DarajaMpesaClient(HttpClient http, MpesaOptions options, ILogger<DarajaMpesaClient> log)
     {
         _o = options;
         _http = http;
+        _log = log;
         _http.BaseAddress ??= new Uri(_o.BaseUrl);
     }
 
@@ -52,6 +55,12 @@ public sealed class DarajaMpesaClient : IMpesaClient
                 TransactionDesc = Trim(request.Description, 13)
             };
 
+            // TEMP DIAGNOSTIC (remove once STK push works): the exact request, passkey masked.
+            _log.LogInformation(
+                "STK push → BusinessShortCode={ShortCode} TransactionType={Txn} Timestamp={Timestamp} " +
+                "Password=Base64({PwShortCode} + Passkey[{Passkey}] + {PwTs})",
+                _o.ShortCode, _o.TransactionType, timestamp, _o.ShortCode, MaskTail(_o.Passkey), timestamp);
+
             using var req = new HttpRequestMessage(HttpMethod.Post, "/mpesa/stkpush/v1/processrequest")
             {
                 Content = JsonContent.Create(body)
@@ -59,15 +68,22 @@ public sealed class DarajaMpesaClient : IMpesaClient
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
             using var resp = await _http.SendAsync(req, ct);
-            var payload = await resp.Content.ReadFromJsonAsync<StkPushResponse>(Json, ct);
+            var raw = await resp.Content.ReadAsStringAsync(ct);
+
+            // TEMP DIAGNOSTIC (remove once STK push works): the raw Daraja response body.
+            _log.LogInformation("STK push ← HTTP {Status} raw={Raw}", (int)resp.StatusCode, raw);
+
+            var payload = string.IsNullOrWhiteSpace(raw) ? null : JsonSerializer.Deserialize<StkPushResponse>(raw, Json);
 
             if (resp.IsSuccessStatusCode && payload?.ResponseCode == "0")
                 return new StkPushResult(true, payload.CheckoutRequestID, payload.MerchantRequestID,
                     payload.ResponseCode, payload.ResponseDescription, null);
 
+            var error = payload?.errorMessage ?? payload?.ResponseDescription ?? $"STK push rejected (HTTP {(int)resp.StatusCode}).";
+            _log.LogWarning("STK push rejected: ResponseCode={Code} errorCode={ErrCode} message={Message}",
+                payload?.ResponseCode, payload?.errorCode, error);
             return new StkPushResult(false, payload?.CheckoutRequestID, payload?.MerchantRequestID,
-                payload?.ResponseCode, payload?.ResponseDescription,
-                payload?.errorMessage ?? $"STK push rejected (HTTP {(int)resp.StatusCode}).");
+                payload?.ResponseCode, payload?.ResponseDescription, error);
         }
         catch (Exception ex)
         {
@@ -149,10 +165,16 @@ public sealed class DarajaMpesaClient : IMpesaClient
 
     private (string Timestamp, string Password) Stamp()
     {
-        var ts = DateTime.UtcNow.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
+        // Daraja stamps in EAT (UTC+3). Password is Base64(ShortCode + Passkey + Timestamp) using the
+        // SAME timestamp string that goes in the request body — they must match exactly.
+        var ts = DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(3)).ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
         var pw = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{_o.ShortCode}{_o.Passkey}{ts}"));
         return (ts, pw);
     }
+
+    /// <summary>Mask a secret for logs: show only its length and last 4 chars.</summary>
+    private static string MaskTail(string? s) =>
+        string.IsNullOrEmpty(s) ? "(empty!)" : $"len={s.Length},…{(s.Length >= 4 ? s[^4..] : s)}";
 
     /// <summary>07XXXXXXXX / +2547XXXXXXXX / 7XXXXXXXX → 2547XXXXXXXX (Daraja's MSISDN form).</summary>
     internal static string NormalizeMsisdn(string phone)

@@ -14,8 +14,8 @@ internal static class MpesaEndpoints
     {
         var g = app.MapGroup("/sales/mpesa").WithTags("M-Pesa");
 
-        // Initiate: returns 202 Accepted while the customer is prompted (sale stays pending),
-        // or 502 if Daraja rejected the STK push outright.
+        // Initiate: 202 Accepted while the customer is prompted (sale stays pending), or 422 if
+        // Daraja did NOT accept the push (ResponseCode != "0", e.g. "Invalid BusinessShortCode").
         g.MapPost("/checkout", async (
             MpesaCheckoutRequest req,
             MpesaPaymentService mpesa,
@@ -32,16 +32,23 @@ internal static class MpesaEndpoints
                 req.AccountReference ?? "POS",
                 ct);
 
-            var body = new MpesaInitiateResponse(
-                result.SaleId, result.TenderId, result.CheckoutRequestId, result.Status, result.Message);
+            // Accepted → 202; the till then polls /status. This is the ONLY "waiting for PIN" state.
+            if (string.Equals(result.Status, "Pending", StringComparison.OrdinalIgnoreCase))
+                return Results.Accepted($"/api/v1/sales/{result.SaleId}/mpesa/status",
+                    new MpesaInitiateResponse(result.SaleId, result.TenderId, result.CheckoutRequestId, result.Status, result.Message));
 
-            // Both outcomes are "we processed the initiate" — the body's Status says what happened, so
-            // the till branches on it rather than on the HTTP code. A rejected push is a business
-            // result (200, Status=Failed, pending tender marked failed), not a transport error;
-            // genuine errors (validation 400, domain 409) still surface as ProblemDetails.
-            return string.Equals(result.Status, "Pending", StringComparison.OrdinalIgnoreCase)
-                ? Results.Accepted($"/api/v1/sales/{result.SaleId}/mpesa/status", body)
-                : Results.Ok(body);
+            // Rejected by Daraja (or unreachable) → terminal failure, NOT "waiting". Return 4xx with
+            // Daraja's errorMessage so the till distinguishes "rejected" from "waiting" and offers
+            // retry / cash. saleId + tenderId ride along as ProblemDetails extensions for tracing.
+            return Results.Problem(
+                title: "M-Pesa STK push was not accepted",
+                detail: result.Message,
+                statusCode: StatusCodes.Status422UnprocessableEntity,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["saleId"] = result.SaleId,
+                    ["tenderId"] = result.TenderId
+                });
         });
 
         // Poll: the till calls this on an interval until PaymentStatus is Confirmed or Failed.

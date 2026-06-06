@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using FluentAssertions;
 using Pos.Api.Contracts;
 using Pos.Application.Payments;
@@ -68,7 +69,7 @@ public sealed class MpesaFlowTests(PosApiFixture fx)
     }
 
     [Fact]
-    public async Task A_rejected_push_marks_the_tender_failed_and_leaves_the_sale_open()
+    public async Task A_rejected_push_returns_422_marks_the_tender_failed_and_leaves_the_sale_open()
     {
         fx.Mpesa.Reset();
         fx.Mpesa.PushShouldFail = true;
@@ -76,11 +77,16 @@ public sealed class MpesaFlowTests(PosApiFixture fx)
         var product = await CreateProduct(client, 100m);
 
         var init = await Initiate(client, product.Id, 100m);
-        init.StatusCode.Should().Be(HttpStatusCode.OK, "a rejected push is a business outcome, not a transport error");
-        var body = (await init.Content.ReadFromJsonAsync<MpesaInitiateResponse>(PosApiFixture.Json))!;
-        body.Status.Should().Be("Failed");
+        init.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity,
+            "a Daraja rejection is terminal, not 'waiting for PIN' — the till must see a 4xx, not a 200");
 
-        var sale = await GetSale(client, body.SaleId);
+        // The Daraja message and the created sale id come back as ProblemDetails (+ extensions).
+        using var doc = JsonDocument.Parse(await init.Content.ReadAsStringAsync());
+        var root = doc.RootElement;
+        root.GetProperty("detail").GetString().Should().Contain("rejected");
+        var saleId = root.GetProperty("saleId").GetGuid();
+
+        var sale = await GetSale(client, saleId);
         sale.Status.Should().Be(SaleStatus.Open);
         sale.Tenders.Single().Status.Should().Be(TenderStatus.Failed);
         (await OnHand(client, product.Id)).Should().Be(0m, "nothing sold yet");

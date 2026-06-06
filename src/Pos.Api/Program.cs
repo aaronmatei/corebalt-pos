@@ -23,8 +23,9 @@ builder.Services.AddScoped<CheckoutService>();
 // never hardcoded. Singleton client so its OAuth token cache survives across requests.
 var mpesaOptions = MpesaOptions.FromConfiguration(builder.Configuration);
 builder.Services.AddSingleton(mpesaOptions);
-builder.Services.AddSingleton<IMpesaClient>(_ =>
-    new DarajaMpesaClient(new HttpClient { BaseAddress = new Uri(mpesaOptions.BaseUrl) }, mpesaOptions));
+builder.Services.AddSingleton<IMpesaClient>(sp =>
+    new DarajaMpesaClient(new HttpClient { BaseAddress = new Uri(mpesaOptions.BaseUrl) }, mpesaOptions,
+        sp.GetRequiredService<ILogger<DarajaMpesaClient>>()));
 builder.Services.AddScoped<MpesaPaymentService>();
 
 builder.Services.AddHttpContextAccessor();
@@ -51,6 +52,18 @@ if (app.Environment.IsDevelopment())
     using var scope = app.Services.CreateScope();
     scope.ServiceProvider.GetRequiredService<PosDbContext>().Database.Migrate();
 }
+
+// TEMP DIAGNOSTIC (remove once STK push works): confirm the RUNNING process actually loaded the
+// M-Pesa secrets (passkey/secret masked). ShortCode is a public till number, shown in full.
+app.Logger.LogInformation(
+    "M-Pesa options loaded: BaseUrl={BaseUrl} ShortCode={ShortCode} TxnType={Txn} " +
+    "ConsumerKey={CK} ConsumerSecret={CS} Passkey={PK} IsConfigured={Cfg}",
+    mpesaOptions.BaseUrl, mpesaOptions.ShortCode, mpesaOptions.TransactionType,
+    MaskSecret(mpesaOptions.ConsumerKey), MaskSecret(mpesaOptions.ConsumerSecret),
+    MaskSecret(mpesaOptions.Passkey), mpesaOptions.IsConfigured);
+
+static string MaskSecret(string? s) =>
+    string.IsNullOrEmpty(s) ? "(MISSING!)" : $"len={s.Length},…{(s.Length >= 4 ? s[^4..] : s)}";
 
 app.UseExceptionHandler();
 app.MapOpenApi();
