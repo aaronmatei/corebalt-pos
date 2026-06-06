@@ -55,11 +55,25 @@ public sealed class DarajaMpesaClient : IMpesaClient
                 TransactionDesc = Trim(request.Description, 13)
             };
 
-            // TEMP DIAGNOSTIC (remove once STK push works): the exact request, passkey masked.
+            // TEMP DIAGNOSTIC (remove once STK push works): the three raw Password inputs (passkey
+            // masked) + the request fields + the expected vs actual concatenation length. Proves the
+            // Password is Base64(ShortCode + Passkey + Timestamp) with the same ShortCode everywhere.
+            var pwInputLen = _o.ShortCode.Length + _o.Passkey.Length + timestamp.Length;
+            var tsValid = timestamp.Length == 14 && timestamp.All(char.IsAsciiDigit);
             _log.LogInformation(
-                "STK push → BusinessShortCode={ShortCode} TransactionType={Txn} Timestamp={Timestamp} " +
-                "Password=Base64({PwShortCode} + Passkey[{Passkey}] + {PwTs})",
-                _o.ShortCode, _o.TransactionType, timestamp, _o.ShortCode, MaskTail(_o.Passkey), timestamp);
+                "STK password inputs: ShortCode='{ShortCode}'(len={ScLen}) Passkey(len={PkLen},…{PkTail}," +
+                " leadWs={LeadWs}, trailWs={TrailWs}) Timestamp='{Ts}'(len={TsLen}, 14digits={TsValid})" +
+                " | pwInputLen={PwLen} pwBase64Len={B64Len}",
+                _o.ShortCode, _o.ShortCode.Length, _o.Passkey.Length,
+                _o.Passkey.Length >= 4 ? _o.Passkey[^4..] : _o.Passkey,
+                _o.Passkey.Length > 0 && char.IsWhiteSpace(_o.Passkey[0]),
+                _o.Passkey.Length > 0 && char.IsWhiteSpace(_o.Passkey[^1]),
+                timestamp, timestamp.Length, tsValid, pwInputLen, password.Length);
+            _log.LogInformation(
+                "STK request → endpoint={Endpoint} BusinessShortCode={Bsc} PartyB={PartyB} " +
+                "TransactionType={Txn} Timestamp={Ts} Password={PwMasked}",
+                $"{_http.BaseAddress}mpesa/stkpush/v1/processrequest", _o.ShortCode, _o.ShortCode,
+                _o.TransactionType, timestamp, MaskTail(password));
 
             using var req = new HttpRequestMessage(HttpMethod.Post, "/mpesa/stkpush/v1/processrequest")
             {
@@ -70,8 +84,11 @@ public sealed class DarajaMpesaClient : IMpesaClient
             using var resp = await _http.SendAsync(req, ct);
             var raw = await resp.Content.ReadAsStringAsync(ct);
 
-            // TEMP DIAGNOSTIC (remove once STK push works): the raw Daraja response body.
-            _log.LogInformation("STK push ← HTTP {Status} raw={Raw}", (int)resp.StatusCode, raw);
+            // TEMP DIAGNOSTIC (remove once STK push works): raw body + Daraja's server Date header.
+            // If DarajaDate's year/day differs from our Timestamp, the rejection is host-clock skew,
+            // not a malformed password.
+            _log.LogInformation("STK response ← HTTP {Status} DarajaDate={Date} raw={Raw}",
+                (int)resp.StatusCode, resp.Headers.Date, raw);
 
             var payload = string.IsNullOrWhiteSpace(raw) ? null : JsonSerializer.Deserialize<StkPushResponse>(raw, Json);
 
@@ -168,7 +185,7 @@ public sealed class DarajaMpesaClient : IMpesaClient
         // Daraja stamps in EAT (UTC+3). Password is Base64(ShortCode + Passkey + Timestamp) using the
         // SAME timestamp string that goes in the request body — they must match exactly.
         var ts = DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(3)).ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
-        var pw = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{_o.ShortCode}{_o.Passkey}{ts}"));
+        var pw = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{_o.ShortCode}{_o.Passkey}{ts}"));
         return (ts, pw);
     }
 

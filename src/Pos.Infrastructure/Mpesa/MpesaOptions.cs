@@ -36,6 +36,16 @@ public sealed class MpesaOptions
         o.ShortCode      = Env("POS_MPESA_SHORTCODE")      ?? s["ShortCode"]      ?? o.ShortCode;
         o.CallbackUrl    = Env("POS_MPESA_CALLBACKURL")    ?? s["CallbackUrl"]    ?? o.CallbackUrl;
         o.TransactionType = s["TransactionType"] ?? o.TransactionType;
+
+        // Trim: user-secrets / env values can pick up a stray trailing newline or space, which would
+        // silently corrupt the Base64 password (and the OAuth Basic header) → Daraja rejection.
+        o.BaseUrl = o.BaseUrl.Trim();
+        o.ConsumerKey = o.ConsumerKey.Trim();
+        o.ConsumerSecret = o.ConsumerSecret.Trim();
+        o.Passkey = o.Passkey.Trim();
+        o.ShortCode = o.ShortCode.Trim();
+        o.CallbackUrl = o.CallbackUrl.Trim();
+        o.TransactionType = o.TransactionType.Trim();
         return o;
     }
 
