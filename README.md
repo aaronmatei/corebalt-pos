@@ -75,11 +75,13 @@ Connection string comes from the `POS_DB` env var; the default targets
 
 > Port **5544** (not 5432) is deliberate: it avoids clashing with any native
 > PostgreSQL service already bound to 5432. `--restart unless-stopped` keeps the
-> container across reboots.
+> container across reboots; the named volume `pos-pg-data` keeps the data across
+> container **recreation** (without it, `docker rm`/recreate wipes the schema and
+> the API would 500 with `relation "products" does not exist`).
 
 End-to-end verification:
 ```bash
-docker run --name pos-pg --restart unless-stopped -e POSTGRES_PASSWORD=pos -e POSTGRES_DB=pos -p 5544:5432 -d postgres:17
+docker run --name pos-pg --restart unless-stopped -v pos-pg-data:/var/lib/postgresql/data -e POSTGRES_PASSWORD=pos -e POSTGRES_DB=pos -p 5544:5432 -d postgres:17
 dotnet tool install --global dotnet-ef
 dotnet ef migrations add InitialCreate --project src/Pos.Infrastructure --startup-project samples/Pos.Persistence.Demo
 dotnet ef database update              --project src/Pos.Infrastructure --startup-project samples/Pos.Persistence.Demo

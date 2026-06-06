@@ -44,12 +44,13 @@ Offline-first: a till/branch must keep selling when the network drops.
 
 ## Build / run
 ```bash
-# Port 5544 avoids clashing with any native Postgres on 5432; --restart survives reboots.
-docker run --name pos-pg --restart unless-stopped -e POSTGRES_PASSWORD=pos -e POSTGRES_DB=pos -p 5544:5432 -d postgres:17
+# Port 5544 avoids clashing with any native Postgres on 5432; --restart survives reboots; the named
+# volume survives container RECREATION (without it, docker rm/recreate wipes the schema).
+docker run --name pos-pg --restart unless-stopped -v pos-pg-data:/var/lib/postgresql/data -e POSTGRES_PASSWORD=pos -e POSTGRES_DB=pos -p 5544:5432 -d postgres:17
 # The InitialCreate migration already exists; this just applies it. (Add a new one only when the model changes.)
 dotnet ef database update --project src/Pos.Infrastructure --startup-project samples/Pos.Persistence.Demo
 dotnet run  --project samples/Pos.Persistence.Demo   # save→reload a sale, print the outbox row
-dotnet run  --project src/Pos.Api                    # store-server host on http://localhost:5080; OpenAPI at /openapi/v1.json
+dotnet run  --project src/Pos.Api                    # store-server host on http://localhost:5080; auto-applies migrations in Development
 dotnet run  --project src/Pos.Till                   # Avalonia till (pure API client); talks to :5080
 dotnet test                                          # domain + API integration tests (43)
 ```

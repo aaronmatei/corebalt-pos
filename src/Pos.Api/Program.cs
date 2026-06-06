@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http.Json;
+using Microsoft.EntityFrameworkCore;
 using Pos.Api.Auth;
 using Pos.Api.Endpoints;
 using Pos.Api.Errors;
@@ -7,6 +8,7 @@ using Pos.Application.Payments;
 using Pos.Application.Sales;
 using Pos.Infrastructure;
 using Pos.Infrastructure.Mpesa;
+using Pos.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -39,6 +41,16 @@ builder.Services.Configure<JsonOptions>(o =>
 });
 
 var app = builder.Build();
+
+// In Development, self-heal a fresh/outdated database by applying migrations on startup, so a
+// recreated docker container (or a clean checkout) doesn't 500 with "relation does not exist".
+// NOT done in Production: there migrations are applied deliberately by ops/CI, never implicitly by
+// the web host. Tests run under the "Testing" environment and migrate via their own fixture.
+if (app.Environment.IsDevelopment())
+{
+    using var scope = app.Services.CreateScope();
+    scope.ServiceProvider.GetRequiredService<PosDbContext>().Database.Migrate();
+}
 
 app.UseExceptionHandler();
 app.MapOpenApi();
