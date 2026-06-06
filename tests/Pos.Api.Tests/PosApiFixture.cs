@@ -17,7 +17,7 @@ namespace Pos.Api.Tests;
 /// Boots the API against a dedicated `pos_test` Postgres database so the dev `pos` database
 /// is never touched by the test run. The connection string is read from POS_TEST_DB; if the
 /// variable isn't set we fall back to the same credentials the README's docker container
-/// (postgres / pos / localhost:5432) so a fresh checkout runs green without ceremony.
+/// (postgres / pos / localhost:5544) so a fresh checkout runs green without ceremony.
 /// The pos_test database is created on first run if it doesn't exist; migrations run on
 /// fixture init; tests isolate by minting a fresh TenantId per case.
 /// </summary>
@@ -25,7 +25,7 @@ public sealed class PosApiFixture : IAsyncLifetime
 {
     /// <summary>The connection string used when POS_TEST_DB isn't set. Matches the README docker setup.</summary>
     public const string DefaultConnectionString =
-        "Host=localhost;Port=5432;Database=pos_test;Username=postgres;Password=pos";
+        "Host=localhost;Port=5544;Database=pos_test;Username=postgres;Password=pos";
 
     public WebApplicationFactory<Program> Factory { get; private set; } = default!;
     public string ConnectionString { get; private set; } = string.Empty;
@@ -57,7 +57,10 @@ public sealed class PosApiFixture : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        await Factory.DisposeAsync();
+        // Null-guard: if InitializeAsync threw before Factory was assigned (e.g. the DB was
+        // unreachable), don't mask that real error with a NullReferenceException here.
+        if (Factory is not null)
+            await Factory.DisposeAsync();
     }
 
     /// <summary>Builds an HttpClient pre-populated with the identity headers for a fresh scope.</summary>

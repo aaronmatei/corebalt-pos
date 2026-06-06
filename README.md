@@ -71,11 +71,15 @@ services.AddInfrastructure(connectionString);
 ```
 
 Connection string comes from the `POS_DB` env var; the default targets
-`Host=localhost;Port=5432;Database=pos;Username=postgres;Password=pos`.
+`Host=localhost;Port=5544;Database=pos;Username=postgres;Password=pos`.
+
+> Port **5544** (not 5432) is deliberate: it avoids clashing with any native
+> PostgreSQL service already bound to 5432. `--restart unless-stopped` keeps the
+> container across reboots.
 
 End-to-end verification:
 ```bash
-docker run --name pos-pg -e POSTGRES_PASSWORD=pos -e POSTGRES_DB=pos -p 5432:5432 -d postgres:17
+docker run --name pos-pg --restart unless-stopped -e POSTGRES_PASSWORD=pos -e POSTGRES_DB=pos -p 5544:5432 -d postgres:17
 dotnet tool install --global dotnet-ef
 dotnet ef migrations add InitialCreate --project src/Pos.Infrastructure --startup-project samples/Pos.Persistence.Demo
 dotnet ef database update              --project src/Pos.Infrastructure --startup-project samples/Pos.Persistence.Demo
@@ -92,7 +96,7 @@ The store-server host is `Pos.Api` (ASP.NET Core 10, minimal APIs). It calls
 over HTTP. Endpoints are thin — orchestration stays in `CheckoutService`.
 
 ```bash
-$env:POS_DB = "Host=localhost;Port=5432;Database=pos;Username=postgres;Password=YOURPASS"
+$env:POS_DB = "Host=localhost;Port=5544;Database=pos;Username=postgres;Password=pos"
 dotnet run --project src/Pos.Api
 # OpenAPI document at: http://localhost:5xxx/openapi/v1.json
 ```
@@ -131,9 +135,10 @@ as `409 Conflict`. Argument-validation errors are `400 Bad Request`.
 
 ### API integration tests
 `tests/Pos.Api.Tests` boots the host via `WebApplicationFactory<Program>` against
-a dedicated `pos_test` database. Tests mint a fresh `TenantId` per case to stay
-isolated. The connection string is taken from `POS_DB_TEST`, or — if that's
-unset — derived from `POS_DB` by swapping `Database=pos` → `Database=pos_test`.
+a dedicated `pos_test` database (created on first run if absent). Tests mint a
+fresh `TenantId` per case to stay isolated. The connection string is taken from
+`POS_TEST_DB`, defaulting to
+`Host=localhost;Port=5544;Database=pos_test;Username=postgres;Password=pos`.
 
 ```bash
 dotnet test tests/Pos.Api.Tests

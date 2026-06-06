@@ -11,7 +11,7 @@ using Pos.Infrastructure.Persistence;
 using Pos.SharedKernel;
 using Pos.SharedKernel.Ids;
 
-const string DefaultConn = "Host=localhost;Port=5432;Database=pos;Username=postgres;Password=pos";
+const string DefaultConn = "Host=localhost;Port=5544;Database=pos;Username=postgres;Password=pos";
 var conn = Environment.GetEnvironmentVariable("POS_DB") ?? DefaultConn;
 
 // Stand-in scope. In production these come from the authenticated request (step 3 API);

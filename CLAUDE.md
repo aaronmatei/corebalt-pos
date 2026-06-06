@@ -39,15 +39,16 @@ Offline-first: a till/branch must keep selling when the network drops.
 
 ## Build / run
 ```bash
-docker run --name pos-pg -e POSTGRES_PASSWORD=pos -e POSTGRES_DB=pos -p 5432:5432 -d postgres:17
+# Port 5544 avoids clashing with any native Postgres on 5432; --restart survives reboots.
+docker run --name pos-pg --restart unless-stopped -e POSTGRES_PASSWORD=pos -e POSTGRES_DB=pos -p 5544:5432 -d postgres:17
 # The InitialCreate migration already exists; this just applies it. (Add a new one only when the model changes.)
 dotnet ef database update --project src/Pos.Infrastructure --startup-project samples/Pos.Persistence.Demo
 dotnet run  --project samples/Pos.Persistence.Demo   # save→reload a sale, print the outbox row
 dotnet run  --project src/Pos.Api                    # store-server host; OpenAPI at /openapi/v1.json
 dotnet test                                          # domain + API integration tests
 ```
-Connection string via `POS_DB` env var (default `Host=localhost;Port=5432;Database=pos;Username=postgres;Password=pos`).
-`Pos.Api.Tests` uses `POS_DB_TEST`, or derives it from `POS_DB` by swapping `Database=pos` → `Database=pos_test`.
+Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Database=pos;Username=postgres;Password=pos`).
+`Pos.Api.Tests` uses `POS_TEST_DB` (default same as above but `Database=pos_test`); the `pos_test` DB is created on first run if absent.
 
 ## Current state & immediate task
 - **Done:** step 1 (domain core + invariants), step 2 (Catalog, Application, EF Core/Postgres

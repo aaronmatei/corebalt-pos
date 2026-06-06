@@ -10,7 +10,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 var conn = Environment.GetEnvironmentVariable("POS_DB")
     ?? builder.Configuration.GetConnectionString("Pos")
-    ?? "Host=localhost;Port=5432;Database=pos;Username=postgres;Password=pos";
+    ?? "Host=localhost;Port=5544;Database=pos;Username=postgres;Password=pos";
 
 builder.Services.AddInfrastructure(conn);
 builder.Services.AddScoped<CheckoutService>();
