@@ -34,6 +34,7 @@ public static class DependencyInjection
 
         services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<PosDbContext>());
         services.AddScoped<ISaleRepository, SaleRepository>();
+        services.AddScoped<ICreditNoteRepository, CreditNoteRepository>();
         services.AddScoped<IStockMovementRepository, StockMovementRepository>();
         services.AddScoped<IProductRepository, ProductRepository>();
         services.AddScoped<IMpesaPaymentRepository, MpesaPaymentRepository>();

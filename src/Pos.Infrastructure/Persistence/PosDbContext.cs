@@ -17,6 +17,7 @@ public sealed class PosDbContext : DbContext, IUnitOfWork
     public DbSet<Product> Products => Set<Product>();
     public DbSet<StockMovement> StockMovements => Set<StockMovement>();
     public DbSet<MpesaPayment> MpesaPayments => Set<MpesaPayment>();
+    public DbSet<CreditNote> CreditNotes => Set<CreditNote>();
     public DbSet<User> Users => Set<User>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 

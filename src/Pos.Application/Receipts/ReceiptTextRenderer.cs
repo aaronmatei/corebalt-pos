@@ -25,6 +25,15 @@ public static class ReceiptTextRenderer
         Line(sb, Center($"Tel: {m.Header.Phone}", cols));
         Line(sb, Rule('=', cols));
 
+        // ── Document title (credit note / refund) ──
+        if (m.DocumentTitle.Length > 0)
+        {
+            Line(sb, Center("*** " + m.DocumentTitle + " ***", cols));
+            if (!string.IsNullOrWhiteSpace(m.AgainstReceiptNo))
+                Line(sb, Center($"Against receipt: {m.AgainstReceiptNo}", cols));
+            Line(sb, Rule('-', cols));
+        }
+
         // ── Meta ── (human Receipt No is what's printed; the UUIDv7 Ref stays in the model + HTML
         // preview for support lookups — it won't fit a 58mm line, so it's not printed on the thermal).
         Line(sb, LeftRight("Receipt No:", m.Meta.ReceiptNo, cols));
@@ -87,6 +96,7 @@ public static class ReceiptTextRenderer
         {
             Line(sb, Center("eTIMS FISCAL RECEIPT", cols));
             Line(sb, LeftRight("CU INV:", f.Cuin ?? "", cols));
+            if (!string.IsNullOrWhiteSpace(f.OriginalCuin)) Line(sb, LeftRight("Orig CU INV:", f.OriginalCuin, cols));
             if (!string.IsNullOrWhiteSpace(f.SignedAtEat)) Line(sb, $"Signed: {f.SignedAtEat} EAT");
             if (!string.IsNullOrWhiteSpace(f.SyncedAtEat)) Line(sb, $"Synced: {f.SyncedAtEat} EAT");
             // Native ESC/POS QR raster comes with the printer driver; for now print the QR payload,

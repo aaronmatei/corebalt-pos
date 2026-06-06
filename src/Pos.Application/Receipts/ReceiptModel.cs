@@ -21,7 +21,9 @@ public sealed record ReceiptModel(
     string? BuyerPin,
     ReceiptFiscal Fiscal,
     IReadOnlyList<ReceiptLegend> Legend,
-    string Currency)
+    string Currency,
+    string DocumentTitle = "",       // e.g. "CREDIT NOTE / REFUND"; empty for a normal sale
+    string? AgainstReceiptNo = null) // original receipt referenced by a credit note
 {
     public static ReceiptModel From(Sale sale, StoreInfo store, ReceiptOptions options)
     {
@@ -79,6 +81,73 @@ public sealed record ReceiptModel(
             BuyerPin: null, fiscal, legend, store.Currency);
     }
 
+    /// <summary>
+    /// Projects a credit note (return/void) into the SAME model with a "CREDIT NOTE / REFUND" header,
+    /// NEGATIVE quantities/amounts, the original receipt referenced, the refund tender, and the
+    /// credit-note fiscal block. Deterministic, like the sale projection.
+    /// </summary>
+    public static ReceiptModel FromCreditNote(CreditNote note, StoreInfo store, ReceiptOptions options)
+    {
+        var header = new ReceiptHeader(store.LegalName, store.BranchName, store.BranchAddress,
+            store.KraPin, store.VatNumber, store.Phone);
+
+        var meta = new ReceiptMeta(
+            ReceiptNo: note.ReturnNumber ?? note.Id.ToString(),
+            Ref: note.Id.ToString(),
+            DateTimeEat: Eat(note.CreatedAtUtc) ?? "",
+            Cashier: string.IsNullOrWhiteSpace(note.AuthorizedByName)
+                ? Short(note.AuthorizedBy)
+                : $"{note.AuthorizedByName} ({note.AuthorizedByStaffCode})",
+            Register: "—",
+            Branch: store.BranchName);
+
+        var items = note.Lines
+            .Select(l => new ReceiptItem(l.Description, NegQty(l), -l.LineTotal.Amount, options.TaxCode(l.TaxClass)))
+            .ToList();
+
+        var vat = note.Lines.GroupBy(l => l.TaxClass).OrderBy(g => g.Key)
+            .Select(g => new ReceiptVatLine(options.TaxCode(g.Key), ReceiptOptions.ClassLabel(g.Key),
+                -g.Sum(x => x.TaxableAmount.Amount), -g.Sum(x => x.VatAmount.Amount)))
+            .ToList();
+
+        var totals = new ReceiptTotals(
+            Subtotal: -note.Lines.Sum(l => l.TaxableAmount.Amount),
+            TotalVat: -note.Lines.Sum(l => l.VatAmount.Amount),
+            GrandTotal: -note.GrandTotal.Amount);
+
+        var refundLabel = note.RefundStatus == RefundStatus.PendingManual
+            ? $"Refund {note.RefundMethod} (MANUAL PENDING)"
+            : $"Refund {note.RefundMethod}";
+        var tenders = new List<ReceiptTender> { new(refundLabel, -note.RefundAmount.Amount, null) };
+
+        var fiscalized = note.EtimsCuin is not null;
+        var fiscal = new ReceiptFiscal(
+            Status: note.FiscalStatus.ToString(),
+            Fiscalized: fiscalized,
+            Cuin: note.EtimsCuin,
+            QrData: note.EtimsQrUrl,
+            SignedAtEat: Eat(note.EtimsSignedAtUtc),
+            SyncedAtEat: null,
+            StatusText: fiscalized
+                ? $"eTIMS CREDIT NOTE: {note.EtimsCuin}"
+                : note.FiscalStatus == FiscalStatus.NotRequired ? "NON-FISCAL / TRAINING" : "eTIMS: NOT FISCALIZED",
+            OriginalCuin: note.OriginalEtimsCuin);
+
+        var legend = vat.Select(v => new ReceiptLegend(v.TaxCode, v.ClassLabel)).ToList();
+
+        return new ReceiptModel(header, meta, items, vat, totals, tenders, Change: 0m,
+            BuyerPin: null, fiscal, legend, store.Currency,
+            DocumentTitle: "CREDIT NOTE / REFUND", AgainstReceiptNo: note.OriginalReceiptNumber);
+    }
+
+    private static string NegQty(CreditNoteLine l)
+    {
+        var price = ReceiptFormat.Money(l.UnitPrice.Amount);
+        return l.UnitOfMeasure == UnitOfMeasure.Kg
+            ? $"-{l.Quantity.ToString("0.000", CultureInfo.InvariantCulture)} kg @ {price}"
+            : $"-{l.Quantity.ToString("0.###", CultureInfo.InvariantCulture)} @ {price}";
+    }
+
     private static string Short(Guid id) => id.ToString("N")[..8].ToUpperInvariant();
 
     private static string? Eat(DateTimeOffset? utc) =>
@@ -99,7 +168,7 @@ public sealed record ReceiptItem(string Description, string QtyLine, decimal Lin
 public sealed record ReceiptVatLine(string TaxCode, string ClassLabel, decimal Taxable, decimal Vat);
 public sealed record ReceiptTotals(decimal Subtotal, decimal TotalVat, decimal GrandTotal);
 public sealed record ReceiptTender(string Type, decimal Amount, string? Reference);
-public sealed record ReceiptFiscal(string Status, bool Fiscalized, string? Cuin, string? QrData, string? SignedAtEat, string? SyncedAtEat, string StatusText);
+public sealed record ReceiptFiscal(string Status, bool Fiscalized, string? Cuin, string? QrData, string? SignedAtEat, string? SyncedAtEat, string StatusText, string? OriginalCuin = null);
 public sealed record ReceiptLegend(string Code, string Label);
 
 public static class ReceiptFormat

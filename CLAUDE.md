@@ -57,7 +57,7 @@ dotnet ef database update --project src/Pos.Infrastructure --startup-project sam
 dotnet run  --project samples/Pos.Persistence.Demo   # save→reload a sale, print the outbox row
 dotnet run  --project src/Pos.Api                    # store-server host on http://localhost:5080; auto-applies migrations in Development
 dotnet run  --project src/Pos.Till                   # Avalonia till (pure API client); talks to :5080
-dotnet test                                          # domain + API integration tests (71)
+dotnet test                                          # domain + API integration tests (76)
 ```
 Receipt header comes from the `Store` config section (LegalName/KraPin/BranchName/BranchAddress/
 Phone/VatNumber/Currency) — config-swappable, defaults to Corebalt Technologies.
@@ -76,8 +76,22 @@ Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Databa
   (fiscal receipt incl. human receipt numbers), step 7 (eTIMS fiscalization SEAM — eTIMS-ready,
   NOT real fiscalization), step 8 (back-office data core: product/price management + stock
   receiving), step 9 (authentication & identity: custom User aggregate + JWT, role policies,
-  till PIN login), and step 10 (Blazor Server **back-office** admin, manager-gated, hosted in the
-  store-server process). All six projects target `net10.0`; `dotnet test` is green at 71 (29 domain + 42 API).
+  till PIN login), step 10 (Blazor Server **back-office** admin, manager-gated, hosted in the
+  store-server process), and step 11 (returns / voids / refunds — immutable credit notes).
+  All six projects target `net10.0`; `dotnet test` is green at 76 (29 domain + 47 API).
+- **Returns / voids / refunds (NEVER mutate a completed sale):** a `CreditNote` aggregate (+ owned
+  `CreditNoteLine`s) is a NEW immutable transaction referencing the original sale — UUIDv7 (client-
+  generated for offline-replay idempotency), tenant+store scoped, store-authoritative number
+  "MB-CN-000124". Holds returned lines (original unit price + tax, VAT backed out), a `ReturnReason`
+  (Damaged/WrongItem/CustomerChangedMind/CashierError), the authorizing user, and the refund
+  (`RefundMethod` Cash/Mpesa/Other + `RefundStatus`: Cash = Refunded now; M-Pesa/Other = PendingManual,
+  NEVER auto-reversed). A **void** = a full-quantity return (no separate concept). `ReturnService`
+  validates the **over-return guard** (sum(prior + this) ≤ sold), writes reversing **IN** `StockMovement`
+  rows + the credit note in one transaction (on-hand stays SUM of movements), then fiscalizes via
+  `IFiscalizationProvider.SignCreditNoteAsync` (stub: CUIN "TEST-CN-…", references the original CUIN).
+  `POST /api/v1/sales/{id}/returns` (Supervisor+; Cashier → 403) and `GET /api/v1/returns/{id}/receipt`
+  → a "CREDIT NOTE / REFUND" receipt (negative qty/amounts, original receipt referenced) via the reused
+  renderer (`ReceiptModel.FromCreditNote`).
 - **eTIMS seam (mirrors the M-Pesa provider pattern):** `IFiscalizationProvider.SignAsync/SyncAsync`
   with `FakeEtimsProvider` (training mode — deterministic "TEST-…" CUIN from the receipt number, fake
   signature, KRA-shaped QR URL; SyncAsync a logged no-op). Config "Etims": Enabled, Mode (Vscu/Oscu),

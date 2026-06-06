@@ -19,4 +19,8 @@ public sealed class ReceiptNumberFormatter
 
     public string Format(long sequence) =>
         $"{_branchCode}-{sequence.ToString(CultureInfo.InvariantCulture).PadLeft(_padWidth, '0')}";
+
+    /// <summary>Credit-note number, e.g. "MB-CN-000124" — drawn from the same per-store sequence.</summary>
+    public string FormatCreditNote(long sequence) =>
+        $"{_branchCode}-CN-{sequence.ToString(CultureInfo.InvariantCulture).PadLeft(_padWidth, '0')}";
 }

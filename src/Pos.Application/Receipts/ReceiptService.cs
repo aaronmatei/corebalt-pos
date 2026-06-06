@@ -13,13 +13,16 @@ public sealed class ReceiptService
 {
     private readonly ICurrentContext _ctx;
     private readonly ISaleRepository _sales;
+    private readonly ICreditNoteRepository _creditNotes;
     private readonly StoreInfo _store;
     private readonly ReceiptOptions _options;
 
-    public ReceiptService(ICurrentContext ctx, ISaleRepository sales, StoreInfo store, ReceiptOptions options)
+    public ReceiptService(ICurrentContext ctx, ISaleRepository sales, ICreditNoteRepository creditNotes,
+        StoreInfo store, ReceiptOptions options)
     {
         _ctx = ctx;
         _sales = sales;
+        _creditNotes = creditNotes;
         _store = store;
         _options = options;
     }
@@ -34,6 +37,17 @@ public sealed class ReceiptService
 
         var cols = columns is > 0 ? columns.Value : _options.DefaultColumns;
         var model = ReceiptModel.From(sale, _store, _options);
+        return new ReceiptResult(model, ReceiptTextRenderer.Render(model, cols), ReceiptHtmlRenderer.Render(model), cols);
+    }
+
+    /// <summary>The credit-note (return/refund) receipt, or null if the credit note isn't in this store.</summary>
+    public async Task<ReceiptResult?> GetReturnAsync(Guid creditNoteId, int? columns, CancellationToken ct = default)
+    {
+        var note = await _creditNotes.GetAsync(_ctx.TenantId, _ctx.StoreId, creditNoteId, ct);
+        if (note is null) return null;
+
+        var cols = columns is > 0 ? columns.Value : _options.DefaultColumns;
+        var model = ReceiptModel.FromCreditNote(note, _store, _options);
         return new ReceiptResult(model, ReceiptTextRenderer.Render(model, cols), ReceiptHtmlRenderer.Render(model), cols);
     }
 }

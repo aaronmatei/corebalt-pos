@@ -149,6 +149,8 @@ keeps the surface curlable and the tests simple. In Development a demo cashier i
 | GET    | `/api/v1/sales/{saleId}/receipt`                 | Fiscal receipt (`?cols=48`/`32`): model + text + HTML |
 | POST   | `/api/v1/inventory/receive`                      | Receive IN: +qty, reason Purchase/OpeningBalance/Adjustment |
 | POST   | `/api/v1/inventory/adjust`                       | Adjustment: signed qty (stock take / shrinkage)      |
+| POST   | `/api/v1/sales/{id}/returns`                     | Return / void (Supervisor+); client-generated returnId |
+| GET    | `/api/v1/returns/{id}/receipt`                   | Credit-note receipt (negative amounts)               |
 | GET    | `/api/v1/inventory/{productId}/on-hand`          | SUM of stock_movements (never a mutable column)      |
 | GET    | `/api/v1/inventory/report`                       | Store stock report (every product, derived on-hand)  |
 | GET    | `/healthz`                                       | No auth                                              |
@@ -314,6 +316,28 @@ invariants (UUIDv7 ids, TenantId+StoreId on every row, append-only stock, on-han
   append exactly **one immutable `StockMovement`** — never an edit. Sales already write the OUT rows.
 - **On-hand is always derived:** `GET /inventory/{id}/on-hand` and `GET /inventory/report` are
   `SUM(QuantityDelta)` over the ledger; there is no stored on-hand/quantity column anywhere.
+
+## Returns, voids & refunds (step 11)
+
+A reversal is a **new immutable `CreditNote`** referencing the original sale — the completed sale is
+never mutated or deleted.
+
+- `POST /api/v1/sales/{id}/returns` `{ returnId, reason, lines[{productId, quantity}], refundMethod }`
+  → creates the credit note and returns its id + a credit-note receipt. **Supervisor or Manager only**
+  (a Cashier gets `403`). Idempotent on the client-generated `returnId` (offline replay).
+- **Reason** is required (Damaged / WrongItem / CustomerChangedMind / CashierError). Returned lines
+  carry the **original** unit price + tax (VAT backed out), so the credit is exact.
+- **Over-return guard:** `sum(prior returns + this) ≤ original qty` per line, else `409`.
+- A **void** is simply a full-quantity return — no separate concept.
+- **Stock:** returned goods append new **IN** `StockMovement` rows (reason `Return`) reversing the
+  sale's OUT; on-hand stays `SUM(movements)`. Existing movements are never edited.
+- **Refund:** Cash is recorded as **Refunded** immediately. M-Pesa / other are recorded as
+  **PendingManual** — flagged for an out-of-band refund, never auto-reversed (the Daraja reversal is a
+  separate, operationally-gated API).
+- **Fiscal:** a credit note is signed through the same eTIMS seam (`SignCreditNoteAsync`, stub CUIN
+  `TEST-CN-…`) referencing the original receipt's CUIN.
+- `GET /api/v1/returns/{id}/receipt` renders a **"CREDIT NOTE / REFUND"** receipt — negative
+  quantities/amounts, the original receipt referenced, the refund tender, the credit-note fiscal block.
 
 ## Back office — Blazor Server admin (step 10)
 

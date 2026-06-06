@@ -41,6 +41,16 @@ public sealed class FakeEtimsProvider : IFiscalizationProvider
         return Task.FromResult(FiscalizationResult.Ok("TEST-" + invoice.ReceiptNumber, string.Empty, string.Empty, _clock.UtcNow));
     }
 
+    public Task<FiscalizationResult> SignCreditNoteAsync(FiscalCreditNote note, CancellationToken ct = default)
+    {
+        var cuin = "TEST-CN-" + note.ReturnNumber;                        // clearly fake, deterministic
+        var signature = "TESTSIG-" + Hash16($"{note.ReturnNumber}|{note.GrandTotal}|{note.OriginalCuin}");
+        var qrData = $"{QrBase}?Data={Uri.EscapeDataString(cuin)}";
+        _log.LogInformation("FakeEtims SIGN credit-note={Return} -> CUIN={Cuin} (orig {Orig}) (TRAINING, not real)",
+            note.ReturnNumber, cuin, note.OriginalCuin);
+        return Task.FromResult(FiscalizationResult.Ok(cuin, signature, qrData, _clock.UtcNow));
+    }
+
     private static string Hash16(string s) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(s)))[..16];
 }

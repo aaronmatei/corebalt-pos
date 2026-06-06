@@ -9,4 +9,7 @@ public interface IFiscalizationProvider
 {
     Task<FiscalizationResult> SignAsync(FiscalInvoice invoice, CancellationToken ct = default);
     Task<FiscalizationResult> SyncAsync(FiscalInvoice invoice, CancellationToken ct = default);
+
+    /// <summary>Fiscalize a CREDIT NOTE (return/void), referencing the original receipt's CUIN.</summary>
+    Task<FiscalizationResult> SignCreditNoteAsync(FiscalCreditNote note, CancellationToken ct = default);
 }

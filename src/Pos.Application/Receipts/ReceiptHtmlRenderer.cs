@@ -25,6 +25,15 @@ public static class ReceiptHtmlRenderer
         Append(sb, $"Tel: {m.Header.Phone}");
         sb.Append("</div>").Append(Hr);
 
+        // Document title (credit note / refund)
+        if (m.DocumentTitle.Length > 0)
+        {
+            sb.Append("<div style=\"text-align:center\">").Append(Strong(m.DocumentTitle));
+            if (!string.IsNullOrWhiteSpace(m.AgainstReceiptNo))
+                Append(sb, $"Against receipt: {m.AgainstReceiptNo}");
+            sb.Append("</div>").Append(Hr);
+        }
+
         // Meta
         sb.Append("<div><strong>Receipt No: ").Append(E(m.Meta.ReceiptNo)).Append("</strong></div>");
         Append(sb, $"Date: {m.Meta.DateTimeEat} EAT");
@@ -87,6 +96,7 @@ public static class ReceiptHtmlRenderer
         {
             sb.Append(Strong("eTIMS FISCAL RECEIPT"));
             Append(sb, $"CU INV: {f.Cuin}");
+            if (!string.IsNullOrWhiteSpace(f.OriginalCuin)) Append(sb, $"Orig CU INV: {f.OriginalCuin}");
             if (!string.IsNullOrWhiteSpace(f.SignedAtEat)) Append(sb, $"Signed: {f.SignedAtEat} EAT");
             if (!string.IsNullOrWhiteSpace(f.SyncedAtEat)) Append(sb, $"Synced: {f.SyncedAtEat} EAT");
             if (!string.IsNullOrWhiteSpace(f.QrData))

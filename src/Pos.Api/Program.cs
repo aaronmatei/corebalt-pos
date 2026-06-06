@@ -34,6 +34,7 @@ builder.Services.AddInfrastructure(conn);
 builder.Services.AddScoped<CheckoutService>();
 builder.Services.AddScoped<Pos.Application.Catalog.ProductService>();
 builder.Services.AddScoped<Pos.Application.Inventory.StockService>();
+builder.Services.AddScoped<Pos.Application.Sales.ReturnService>();
 
 // M-Pesa (Daraja). Secrets come from the "Mpesa" config section / user-secrets / POS_MPESA_* env;
 // never hardcoded. Singleton client so its OAuth token cache survives across requests.
@@ -144,6 +145,8 @@ builder.Services.AddAuthorization(o =>
     o.AddPolicy("Manager", p => p.RequireRole(nameof(UserRole.Manager))); // API (JWT)
     o.AddPolicy("CashierOrAbove", p => p.RequireRole(
         nameof(UserRole.Cashier), nameof(UserRole.Supervisor), nameof(UserRole.Manager)));
+    o.AddPolicy("SupervisorOrAbove", p => p.RequireRole(
+        nameof(UserRole.Supervisor), nameof(UserRole.Manager))); // voids / returns / refunds
     // Back-office pages/forms: cookie principal + Manager role (challenge redirects to /login).
     o.AddPolicy("BackOfficeManager", p => p
         .AddAuthenticationSchemes(CookieAuthenticationDefaults.AuthenticationScheme)
@@ -240,6 +243,7 @@ var v1 = app.MapGroup("/api/v1").RequireAuthorization();
 v1.MapCatalog();
 v1.MapSales();
 v1.MapReceipts();
+v1.MapReturns();
 v1.MapMpesa();
 v1.MapInventory();
 
