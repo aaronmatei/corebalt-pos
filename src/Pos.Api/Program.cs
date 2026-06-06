@@ -160,33 +160,44 @@ if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing"))
 // migrated production DB skips the seed rather than crashing the host.
 if (storeServer.TenantId != Guid.Empty)
 {
+    var bootstrapUser = app.Configuration["Auth:Bootstrap:Username"] ?? "manager";
+    var bootstrapPassword = app.Configuration["Auth:Bootstrap:Password"] ?? "ChangeMe!123";
+    var devStaff = app.Configuration["Auth:DevCashier:StaffCode"] ?? "1001";
+    var devPin = app.Configuration["Auth:DevCashier:Pin"] ?? "1234";
+
     try
     {
         using var scope = app.Services.CreateScope();
-        await scope.ServiceProvider.GetRequiredService<AuthService>().EnsureBootstrapManagerAsync(
-            app.Configuration["Auth:Bootstrap:Username"] ?? "manager",
-            app.Configuration["Auth:Bootstrap:Password"] ?? "ChangeMe!123");
+        await scope.ServiceProvider.GetRequiredService<AuthService>()
+            .EnsureBootstrapManagerAsync(bootstrapUser, bootstrapPassword);
     }
     catch (Exception ex)
     {
         app.Logger.LogWarning(ex, "Bootstrap manager seed skipped (DB not ready?).");
     }
 
-    // DEV ONLY: seed a demo cashier with a PIN so the till's PIN login works out of the box.
+    // DEV ONLY: seed a demo cashier with a PIN so the till's PIN login works out of the box, and print
+    // every seeded credential in one banner so they never have to be guessed. NEVER runs in Production.
     if (app.Environment.IsDevelopment())
     {
         try
         {
             using var scope = app.Services.CreateScope();
-            var staff = app.Configuration["Auth:DevCashier:StaffCode"] ?? "1001";
-            var pin = app.Configuration["Auth:DevCashier:Pin"] ?? "1234";
-            await scope.ServiceProvider.GetRequiredService<AuthService>().EnsureDevCashierAsync("Demo Cashier", staff, pin);
-            app.Logger.LogWarning("DEV cashier available for till PIN login — staff code {Staff}, PIN {Pin}.", staff, pin);
+            await scope.ServiceProvider.GetRequiredService<AuthService>()
+                .EnsureDevCashierAsync("Demo Cashier", devStaff, devPin);
         }
         catch (Exception ex)
         {
             app.Logger.LogWarning(ex, "Dev cashier seed skipped.");
         }
+
+        app.Logger.LogWarning(
+            "\n================ DEV SEED CREDENTIALS (Development only) ================\n" +
+            "  Till PIN login (this screen):  StaffCode '{Staff}'   PIN '{Pin}'\n" +
+            "  Back-office password login:    username  '{User}'    password '{Password}'  (must change on first login)\n" +
+            "  Defined in src/Pos.Api/appsettings.json -> Auth:DevCashier / Auth:Bootstrap\n" +
+            "=======================================================================",
+            devStaff, devPin, bootstrapUser, bootstrapPassword);
     }
 }
 
