@@ -1,0 +1,66 @@
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
+using Pos.Api.Contracts;
+using Pos.Application.Abstractions;
+using Pos.Application.Sales;
+
+namespace Pos.Api.Endpoints;
+
+internal static class SalesEndpoints
+{
+    public static IEndpointRouteBuilder MapSales(this IEndpointRouteBuilder app)
+    {
+        var g = app.MapGroup("/sales").WithTags("Sales");
+
+        g.MapPost("/", async (
+            StartSaleRequest req,
+            CheckoutService checkout,
+            CancellationToken ct) =>
+        {
+            var saleId = await checkout.StartAsync(req.RegisterId, req.Currency, ct);
+            return Results.Created($"/api/v1/sales/{saleId}", new StartSaleResponse(saleId));
+        });
+
+        g.MapPost("/{saleId:guid}/lines", async (
+            Guid saleId,
+            AddLineRequest req,
+            CheckoutService checkout,
+            CancellationToken ct) =>
+        {
+            await checkout.AddLineAsync(saleId, req.ProductId, req.Quantity, ct);
+            return Results.NoContent();
+        });
+
+        g.MapPost("/{saleId:guid}/tenders", async (
+            Guid saleId,
+            AddTenderRequest req,
+            CheckoutService checkout,
+            CancellationToken ct) =>
+        {
+            await checkout.AddTenderAsync(saleId, req.Type, req.Amount, req.Reference, ct);
+            return Results.NoContent();
+        });
+
+        g.MapPost("/{saleId:guid}/complete", async (
+            Guid saleId,
+            CheckoutService checkout,
+            CancellationToken ct) =>
+        {
+            var result = await checkout.CompleteAsync(saleId, ct);
+            return Results.Ok(new CompleteSaleResponse(
+                result.SaleId, result.Total, result.ChangeDue, result.Currency));
+        });
+
+        g.MapGet("/{saleId:guid}", async (
+            Guid saleId,
+            ICurrentContext ctx,
+            ISaleRepository sales,
+            CancellationToken ct) =>
+        {
+            var sale = await sales.GetAsync(ctx.TenantId, ctx.StoreId, saleId, ct);
+            return sale is null ? Results.NotFound() : Results.Ok(sale.ToResponse());
+        });
+
+        return app;
+    }
+}

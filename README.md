@@ -5,7 +5,8 @@ supermarket → multi-branch chain (and later SaaS) **without rewrites**. Step 1
 delivered the domain core and the four structural invariants. Step 2 adds the
 Catalog bounded context, the `CheckoutService` use case (Application), and the
 EF Core 10 + PostgreSQL persistence with a transactional outbox (Infrastructure),
-plus xUnit tests pinning the invariants.
+plus xUnit tests pinning the invariants. Step 3 adds the ASP.NET Core
+store-server API + WebApplicationFactory integration tests.
 
 > Stack: **.NET 10, C# 14, EF Core 10, PostgreSQL via Npgsql.** Step 2 onward
 > needs `dotnet restore` against the public NuGet feed.
@@ -30,11 +31,13 @@ src/
   Pos.Domain/            bounded contexts: Sales, Inventory, Catalog (Product)
   Pos.Application/       ports (IClock, ICurrentContext, IUnitOfWork, repositories) + CheckoutService
   Pos.Infrastructure/    PosDbContext, EF configurations, repositories, outbox interceptor, DI
+  Pos.Api/               ASP.NET Core store-server host: catalog + checkout + inventory over HTTP
 samples/
   Pos.Smoke/             domain-only console (no infrastructure)
   Pos.Persistence.Demo/  saves a sale to Postgres, reloads it, prints the outbox row
 tests/
   Pos.Domain.Tests/      xUnit invariant tests (UUIDv7, store/tenant scoping, append-only, Money)
+  Pos.Api.Tests/         WebApplicationFactory integration tests against pos_test
 ```
 
 ## Step 2 design notes
@@ -50,8 +53,8 @@ tests/
   neither — the append-only inventory invariant survives partial failure.
 - **Transactional outbox** (`DomainEventsToOutboxInterceptor`) drains every aggregate's
   `DomainEvents` collection into `outbox_messages` during `SaveChangesAsync`, in the
-  same database transaction. `OutboxDispatcher` ships them at least once; the step-2
-  stub logs them and the real HQ transport lands in step 3.
+  same database transaction. `OutboxDispatcher` ships them at least once; the current
+  stub logs each row and the real HQ transport lands with the chain/M1 milestone.
 
 ## Build & run
 ```bash
@@ -81,6 +84,60 @@ dotnet run --project samples/Pos.Persistence.Demo
 `Pos.Persistence.Demo` migrates the database, seeds a Product, runs a full checkout
 via `CheckoutService`, reloads the sale via `ISaleRepository`, and prints the
 `SaleCompleted` outbox row written by the interceptor.
+
+## HTTP API (step 3)
+
+The store-server host is `Pos.Api` (ASP.NET Core 10, minimal APIs). It calls
+`AddInfrastructure(POS_DB)` at boot, and exposes catalog + checkout + on-hand
+over HTTP. Endpoints are thin — orchestration stays in `CheckoutService`.
+
+```bash
+$env:POS_DB = "Host=localhost;Port=5432;Database=pos;Username=postgres;Password=YOURPASS"
+dotnet run --project src/Pos.Api
+# OpenAPI document at: http://localhost:5xxx/openapi/v1.json
+```
+
+### Identity
+Every business endpoint requires three trusted headers — this is the step-3
+stand-in for the chain/SaaS-tier JWT bearer (kept curlable for now):
+
+| Header        | Type | Source of truth (later)                  |
+|---------------|------|------------------------------------------|
+| `X-Tenant-Id` | UUID | JWT claim `tenant`                       |
+| `X-Store-Id`  | UUID | JWT claim `store` (this branch)          |
+| `X-User-Id`   | UUID | JWT claim `sub` (the cashier)            |
+
+Missing or non-UUID values → `401 Unauthorized` (`ProblemDetails`). `GET /healthz`
+is the only route that doesn't need them.
+
+### Endpoints
+
+| Method | Path                                             | Notes                                                |
+|--------|--------------------------------------------------|------------------------------------------------------|
+| POST   | `/api/v1/products`                               | Create a Product                                     |
+| GET    | `/api/v1/products/{id}`                          |                                                      |
+| GET    | `/api/v1/products/by-sku/{sku}`                  |                                                      |
+| PUT    | `/api/v1/products/{id}/price`                    | Reprice                                              |
+| POST   | `/api/v1/sales`                                  | StartAsync, returns saleId                           |
+| POST   | `/api/v1/sales/{saleId}/lines`                   | Body supplies productId + quantity; price from catalog |
+| POST   | `/api/v1/sales/{saleId}/tenders`                 | Cash / Mpesa / Card / AirtelMoney                    |
+| POST   | `/api/v1/sales/{saleId}/complete`                | Writes -delta StockMovements in the same UoW         |
+| GET    | `/api/v1/sales/{saleId}`                         |                                                      |
+| GET    | `/api/v1/inventory/{productId}/on-hand`          | SUM of stock_movements (never a mutable column)      |
+| GET    | `/healthz`                                       | No auth                                              |
+
+Domain rule violations (`Sale not fully paid`, `Currency mismatch`, …) surface
+as `409 Conflict`. Argument-validation errors are `400 Bad Request`.
+
+### API integration tests
+`tests/Pos.Api.Tests` boots the host via `WebApplicationFactory<Program>` against
+a dedicated `pos_test` database. Tests mint a fresh `TenantId` per case to stay
+isolated. The connection string is taken from `POS_DB_TEST`, or — if that's
+unset — derived from `POS_DB` by swapping `Database=pos` → `Database=pos_test`.
+
+```bash
+dotnet test tests/Pos.Api.Tests
+```
 
 ## Roadmap (anticipated in design choices)
 - Single-store supermarket: S1 multi-lane foundation, S2 weighed goods + scales, S3 cash office,
