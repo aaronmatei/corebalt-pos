@@ -6,6 +6,7 @@
         x:DataType="vm:ShellViewModel"
         Width="1100" Height="720"
         MinWidth="900" MinHeight="600"
+        Icon="/Assets/corebalt-icon.ico"
         Title="Corebalt POS Till">
 
   <ContentControl Content="{Binding Current}">

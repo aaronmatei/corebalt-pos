@@ -8,6 +8,8 @@
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- win32 .exe icon (taskbar / file explorer). -->
+    <ApplicationIcon>Assets/corebalt-icon.ico</ApplicationIcon>
     <!--
       NU1903 (Tmds.DBus.Protocol 0.21.2): a transitive, LINUX-ONLY dependency of Avalonia (its
       D-Bus IPC transport). It is never JIT-loaded on the win32 till. Avalonia 11.3 pins 0.21.2;
@@ -29,6 +31,11 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Bundles Assets/** (incl. corebalt-icon.ico) as Avalonia resources for Window Icon="/Assets/...". -->
+    <AvaloniaResource Include="Assets/**" />
   </ItemGroup>
 
   <ItemGroup>
