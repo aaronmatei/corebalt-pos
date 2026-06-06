@@ -12,6 +12,23 @@ internal static class SalesEndpoints
     {
         var g = app.MapGroup("/sales").WithTags("Sales");
 
+        // One-shot atomic checkout — the till's primary path. Builds, tenders, and completes
+        // the whole sale in a single transaction; returns 201 with the sale id + change due.
+        g.MapPost("/checkout", async (
+            CheckoutRequest req,
+            CheckoutService checkout,
+            CancellationToken ct) =>
+        {
+            var result = await checkout.CheckoutAsync(
+                req.RegisterId,
+                req.Currency,
+                req.Lines.Select(l => new CheckoutLine(l.ProductId, l.Quantity)).ToList(),
+                req.Tenders.Select(t => new CheckoutTender(t.Type, t.Amount, t.Reference)).ToList(),
+                ct);
+            return Results.Created($"/api/v1/sales/{result.SaleId}",
+                new CompleteSaleResponse(result.SaleId, result.Total, result.ChangeDue, result.Currency));
+        });
+
         g.MapPost("/", async (
             StartSaleRequest req,
             CheckoutService checkout,

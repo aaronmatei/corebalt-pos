@@ -87,9 +87,59 @@ public sealed class CheckoutService
         return new CheckoutResult(sale.Id, sale.Subtotal.Amount, change, sale.Currency);
     }
 
+    /// <summary>
+    /// One-shot checkout: open a sale, add every line (price always sourced from the Product),
+    /// add every tender, complete, and write the stock movements — all in a SINGLE unit of work.
+    /// A till call either commits the whole sale or nothing, so a dropped connection can't leave
+    /// a half-built open sale on the server. The per-step methods above remain for flows that
+    /// build a sale incrementally (e.g. a parked/resumed basket).
+    /// </summary>
+    public async Task<CheckoutResult> CheckoutAsync(
+        Guid registerId,
+        string currency,
+        IReadOnlyList<CheckoutLine> lines,
+        IReadOnlyList<CheckoutTender> tenders,
+        CancellationToken ct = default)
+    {
+        if (lines is null || lines.Count == 0)
+            throw new ArgumentException("A checkout needs at least one line.", nameof(lines));
+
+        var sale = Sale.Start(_ctx.TenantId, _ctx.StoreId, registerId, _ctx.UserId, currency);
+
+        foreach (var l in lines)
+        {
+            var product = await _products.GetAsync(_ctx.TenantId, _ctx.StoreId, l.ProductId, ct)
+                ?? throw new InvalidOperationException($"Product {l.ProductId} not found in this store.");
+            if (!product.IsActive) throw new InvalidOperationException($"Product {product.Sku} is inactive.");
+
+            // Defensive copy of the owned Money — see AddLineAsync for why sharing the instance
+            // corrupts change tracking.
+            var unitPrice = new Money(product.Price.Amount, product.Price.Currency);
+            sale.AddLine(product.Id, product.Name, l.Quantity, unitPrice);
+        }
+
+        foreach (var t in tenders ?? Array.Empty<CheckoutTender>())
+            sale.AddTender(t.Type, new Money(t.Amount, sale.Currency), t.Reference);
+
+        sale.Complete();
+
+        var movements = sale.Lines.Select(line => StockMovement.Record(
+            _ctx.TenantId, _ctx.StoreId, line.ProductId,
+            -line.Quantity, StockMovementReason.Sale, sourceRef: sale.Id));
+
+        await _sales.AddAsync(sale, ct);
+        await _stock.AddRangeAsync(movements, ct);
+        await _uow.SaveChangesAsync(ct); // atomic: sale + lines + tenders + movements + outbox
+
+        var change = sale.BalanceDue.Amount < 0 ? -sale.BalanceDue.Amount : 0m;
+        return new CheckoutResult(sale.Id, sale.Subtotal.Amount, change, sale.Currency);
+    }
+
     private async Task<Sale> RequireSaleAsync(Guid saleId, CancellationToken ct) =>
         await _sales.GetAsync(_ctx.TenantId, _ctx.StoreId, saleId, ct)
         ?? throw new InvalidOperationException($"Sale {saleId} not found in this store.");
 }
 
+public sealed record CheckoutLine(Guid ProductId, decimal Quantity);
+public sealed record CheckoutTender(TenderType Type, decimal Amount, string? Reference = null);
 public sealed record CheckoutResult(Guid SaleId, decimal Total, decimal ChangeDue, string Currency);

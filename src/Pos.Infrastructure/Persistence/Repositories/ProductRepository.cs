@@ -19,6 +19,17 @@ internal sealed class ProductRepository : IProductRepository
             .Where(p => p.TenantId == tenantId && p.StoreId == storeId && p.Sku == sku)
             .FirstOrDefaultAsync(ct);
 
+    public Task<Product?> FindByBarcodeAsync(Guid tenantId, Guid storeId, string barcode, CancellationToken ct = default) =>
+        _db.Products
+            .Where(p => p.TenantId == tenantId && p.StoreId == storeId && p.Barcode == barcode)
+            .FirstOrDefaultAsync(ct);
+
+    public async Task<IReadOnlyList<Product>> ListAsync(Guid tenantId, Guid storeId, CancellationToken ct = default) =>
+        await _db.Products
+            .Where(p => p.TenantId == tenantId && p.StoreId == storeId)
+            .OrderBy(p => p.Name)
+            .ToListAsync(ct);
+
     public async Task AddAsync(Product product, CancellationToken ct = default) =>
         await _db.Products.AddAsync(product, ct);
 }

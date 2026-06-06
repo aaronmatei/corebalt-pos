@@ -32,6 +32,9 @@ Offline-first: a till/branch must keep selling when the network drops.
   `Persistence/Migrations` holds the EF migration (`InitialCreate`) + model snapshot
 - `src/Pos.Api` — ASP.NET Core 10 minimal-API store-server host: catalog + checkout + inventory over
   HTTP. Thin endpoints delegating to `CheckoutService`; header-based identity (`Auth/`)
+- `src/Pos.Till` — Avalonia (.NET 10, MVVM/CommunityToolkit) desktop till. A **pure HTTP client**
+  of `Pos.Api`: it references no domain/application/infrastructure assembly and owns its own wire
+  DTOs. Single till screen (catalogue + barcode scan + cart + cash/M-Pesa tender + checkout)
 - `samples/Pos.Smoke` — domain-only console (no infrastructure)
 - `samples/Pos.Persistence.Demo` — saves a sale to Postgres, reloads it, prints the outbox
 - `tests/Pos.Domain.Tests` — xUnit invariant tests (UUIDv7, store/tenant scoping, append-only, Money)
@@ -44,16 +47,27 @@ docker run --name pos-pg --restart unless-stopped -e POSTGRES_PASSWORD=pos -e PO
 # The InitialCreate migration already exists; this just applies it. (Add a new one only when the model changes.)
 dotnet ef database update --project src/Pos.Infrastructure --startup-project samples/Pos.Persistence.Demo
 dotnet run  --project samples/Pos.Persistence.Demo   # save→reload a sale, print the outbox row
-dotnet run  --project src/Pos.Api                    # store-server host; OpenAPI at /openapi/v1.json
-dotnet test                                          # domain + API integration tests
+dotnet run  --project src/Pos.Api                    # store-server host on http://localhost:5080; OpenAPI at /openapi/v1.json
+dotnet run  --project src/Pos.Till                   # Avalonia till (pure API client); talks to :5080
+dotnet test                                          # domain + API integration tests (28)
 ```
 Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Database=pos;Username=postgres;Password=pos`).
 `Pos.Api.Tests` uses `POS_TEST_DB` (default same as above but `Database=pos_test`); the `pos_test` DB is created on first run if absent.
 
 ## Current state & immediate task
 - **Done:** step 1 (domain core + invariants), step 2 (Catalog, Application, EF Core/Postgres
-  persistence + transactional outbox, `InitialCreate` migration), and step 3 (`Pos.Api`
-  store-server host + `Pos.Api.Tests` integration tests). All five projects target `net10.0`.
+  persistence + transactional outbox, `InitialCreate` migration), step 3 (`Pos.Api`
+  store-server host + `Pos.Api.Tests` integration tests), and step 4 (`Pos.Till` Avalonia client).
+  All six projects target `net10.0`; `dotnet test` is green at 28 (16 domain + 12 API).
+- **Catalog/checkout endpoints (`/api/v1`):** `GET /products` (list), `GET /products/{id}`,
+  `GET /products/by-sku/{sku}`, `GET /products/barcode/{barcode}`, `POST /products`,
+  `PUT /products/{id}/price`; `POST /sales/checkout` (atomic one-shot: start+lines+tenders+complete
+  in a single transaction, returns 201), plus the incremental `POST /sales` → `/lines` → `/tenders`
+  → `/complete` flow; `GET /sales/{id}`; `GET /inventory/{productId}/on-hand`.
+- **Product.Barcode:** nullable scan code (GTIN/EAN-13), distinct from `Sku`, indexed per tenant
+  (`AddProductBarcode` migration). The till's scan handler (`Scanning/ScannedCode`) already
+  classifies price-embedded EAN-13 (number-system digit `2`) so weighed-goods PLU+weight decoding
+  can slot in with the scales feature (roadmap S2) without changing the contract.
 - **API identity (step-3 stand-in for the chain/SaaS JWT):** every `/api/v1` route requires three
   trusted headers — `X-Tenant-Id`, `X-Store-Id`, `X-User-Id` (all UUIDs), read by
   `HeaderCurrentContext` and enforced by `AuthEndpointFilter`. Missing/non-UUID → 401. `GET /healthz`

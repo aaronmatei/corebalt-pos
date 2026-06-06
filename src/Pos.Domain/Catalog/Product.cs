@@ -14,6 +14,15 @@ public sealed class Product : AggregateRoot, ITenantScoped, IStoreScoped
     public Guid StoreId { get; private set; }
     public string Sku { get; private set; } = string.Empty;
     public string Name { get; private set; } = string.Empty;
+
+    /// <summary>
+    /// The printed scan code (GTIN / EAN-13 / UPC), distinct from the human SKU. Nullable
+    /// because not every line is barcoded. Today a product carries at most one; the roadmap
+    /// (multiple barcodes per product, price-embedded EAN-13 from scales) lands as a child
+    /// table later, so callers should treat "look up by scanned code" as the stable contract
+    /// rather than this single column.
+    /// </summary>
+    public string? Barcode { get; private set; }
     public Money Price { get; private set; } = Money.Zero();
     public UnitOfMeasure UnitOfMeasure { get; private set; }
     public bool IsActive { get; private set; }
@@ -21,7 +30,7 @@ public sealed class Product : AggregateRoot, ITenantScoped, IStoreScoped
     private Product() { } // EF
 
     public static Product Create(Guid tenantId, Guid storeId, string sku, string name,
-        Money price, UnitOfMeasure unit = UnitOfMeasure.Each)
+        Money price, UnitOfMeasure unit = UnitOfMeasure.Each, string? barcode = null)
     {
         if (string.IsNullOrWhiteSpace(sku)) throw new ArgumentException("Sku is required.", nameof(sku));
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("Name is required.", nameof(name));
@@ -34,11 +43,18 @@ public sealed class Product : AggregateRoot, ITenantScoped, IStoreScoped
             StoreId = storeId,
             Sku = sku.Trim(),
             Name = name.Trim(),
+            Barcode = NormalizeBarcode(barcode),
             Price = price,
             UnitOfMeasure = unit,
             IsActive = true
         };
     }
+
+    /// <summary>Set or clear the product's scan code. Blank input clears it (stored as null).</summary>
+    public void AssignBarcode(string? barcode) => Barcode = NormalizeBarcode(barcode);
+
+    private static string? NormalizeBarcode(string? barcode)
+        => string.IsNullOrWhiteSpace(barcode) ? null : barcode.Trim();
 
     public void Reprice(Money newPrice)
     {

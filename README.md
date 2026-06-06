@@ -118,10 +118,13 @@ is the only route that doesn't need them.
 
 | Method | Path                                             | Notes                                                |
 |--------|--------------------------------------------------|------------------------------------------------------|
-| POST   | `/api/v1/products`                               | Create a Product                                     |
+| GET    | `/api/v1/products`                               | List the store's catalogue (ordered by name)         |
+| POST   | `/api/v1/products`                               | Create a Product (optional `barcode`)                |
 | GET    | `/api/v1/products/{id}`                          |                                                      |
 | GET    | `/api/v1/products/by-sku/{sku}`                  |                                                      |
+| GET    | `/api/v1/products/barcode/{barcode}`             | Look up by printed GTIN/EAN-13 scan code             |
 | PUT    | `/api/v1/products/{id}/price`                    | Reprice                                              |
+| POST   | `/api/v1/sales/checkout`                          | **Atomic** start+lines+tenders+complete → 201        |
 | POST   | `/api/v1/sales`                                  | StartAsync, returns saleId                           |
 | POST   | `/api/v1/sales/{saleId}/lines`                   | Body supplies productId + quantity; price from catalog |
 | POST   | `/api/v1/sales/{saleId}/tenders`                 | Cash / Mpesa / Card / AirtelMoney                    |
@@ -143,6 +146,29 @@ fresh `TenantId` per case to stay isolated. The connection string is taken from
 ```bash
 dotnet test tests/Pos.Api.Tests
 ```
+
+## Till client (step 4)
+
+`src/Pos.Till` is an Avalonia (.NET 10, MVVM via CommunityToolkit.Mvvm) desktop till. It is a
+**pure HTTP client** of `Pos.Api` — it references none of the domain/application/infrastructure
+assemblies and carries its own wire DTOs. One screen: browse/search the catalogue, scan or type a
+barcode, add lines (weighed goods prompt for kg, others for quantity), tender cash and/or M-Pesa
+(reference), and complete the sale. The client shows a local subtotal/change preview but treats the
+checkout response as authoritative for the final total and change.
+
+Config (`appsettings.json` section `Till`, or `POS_TILL_*` env vars): `BaseUrl`
+(default `http://localhost:5080`) and the identity GUIDs (`TenantId`/`StoreId`/`UserId` sent as the
+`X-*` headers, plus `RegisterId` for the checkout body) — defaulting to the dev scope the
+persistence demo seeds, so the till sees the same store.
+
+```bash
+dotnet run --project src/Pos.Api      # serves http://localhost:5080
+dotnet run --project src/Pos.Till     # launches the till against it
+```
+
+The scan handler (`Scanning/ScannedCode`) already distinguishes a normal GTIN from a price-embedded
+EAN-13 (number-system digit `2`, the in-store/scale range); decoding its PLU+weight payload arrives
+with the weighed-goods/scales feature (roadmap S2).
 
 ## Roadmap (anticipated in design choices)
 - Single-store supermarket: S1 multi-lane foundation, S2 weighed goods + scales, S3 cash office,

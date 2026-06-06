@@ -11,6 +11,10 @@ internal sealed class SaleRepository : ISaleRepository
 
     public Task<Sale?> GetAsync(Guid tenantId, Guid storeId, Guid saleId, CancellationToken ct = default) =>
         _db.Sales
+            // Lines and Tenders are owned collections, so EF always loads both with the Sale.
+            // Pulling two collections in one SQL statement is a cartesian product (the
+            // MultipleCollectionIncludeWarning); SplitQuery fetches each in its own round-trip.
+            .AsSplitQuery()
             .Where(s => s.TenantId == tenantId && s.StoreId == storeId && s.Id == saleId)
             .FirstOrDefaultAsync(ct);
 

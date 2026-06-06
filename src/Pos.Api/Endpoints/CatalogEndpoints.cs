@@ -25,10 +25,20 @@ internal static class CatalogEndpoints
                 ctx.TenantId, ctx.StoreId,
                 req.Sku, req.Name,
                 new Money(req.PriceAmount, req.PriceCurrency),
-                req.UnitOfMeasure);
+                req.UnitOfMeasure,
+                req.Barcode);
             await products.AddAsync(product, ct);
             await uow.SaveChangesAsync(ct);
             return Results.Created($"/api/v1/products/{product.Id}", product.ToResponse());
+        });
+
+        g.MapGet("/", async (
+            ICurrentContext ctx,
+            IProductRepository products,
+            CancellationToken ct) =>
+        {
+            var list = await products.ListAsync(ctx.TenantId, ctx.StoreId, ct);
+            return Results.Ok(list.Select(p => p.ToResponse()).ToList());
         });
 
         g.MapGet("/{id:guid}", async (
@@ -48,6 +58,16 @@ internal static class CatalogEndpoints
             CancellationToken ct) =>
         {
             var product = await products.FindBySkuAsync(ctx.TenantId, ctx.StoreId, sku, ct);
+            return product is null ? Results.NotFound() : Results.Ok(product.ToResponse());
+        });
+
+        g.MapGet("/barcode/{barcode}", async (
+            string barcode,
+            ICurrentContext ctx,
+            IProductRepository products,
+            CancellationToken ct) =>
+        {
+            var product = await products.FindByBarcodeAsync(ctx.TenantId, ctx.StoreId, barcode, ct);
             return product is null ? Results.NotFound() : Results.Ok(product.ToResponse());
         });
 

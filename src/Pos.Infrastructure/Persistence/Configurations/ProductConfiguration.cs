@@ -16,6 +16,7 @@ internal sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
         b.Property(p => p.StoreId).HasColumnName("store_id").IsRequired();
         b.Property(p => p.Sku).HasColumnName("sku").HasMaxLength(64).IsRequired();
         b.Property(p => p.Name).HasColumnName("name").HasMaxLength(200).IsRequired();
+        b.Property(p => p.Barcode).HasColumnName("barcode").HasMaxLength(64);
         b.Property(p => p.UnitOfMeasure).HasColumnName("unit_of_measure").HasConversion<int>();
         b.Property(p => p.IsActive).HasColumnName("is_active");
 
@@ -28,6 +29,12 @@ internal sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
         b.HasIndex(p => new { p.TenantId, p.StoreId, p.Sku })
             .IsUnique()
             .HasDatabaseName("ux_products_tenant_store_sku");
+
+        // Scan-code lookups are indexed per tenant. Deliberately non-unique: the roadmap moves
+        // to several barcodes per product (and price-embedded EAN-13 from scales), so a unique
+        // constraint here would have to be torn down later. Nulls don't occupy the index.
+        b.HasIndex(p => new { p.TenantId, p.Barcode })
+            .HasDatabaseName("ix_products_tenant_barcode");
 
         b.Ignore(p => p.DomainEvents);
     }

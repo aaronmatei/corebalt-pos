@@ -7,7 +7,8 @@ public sealed record CreateProductRequest(
     string Name,
     decimal PriceAmount,
     string PriceCurrency,
-    UnitOfMeasure UnitOfMeasure = UnitOfMeasure.Each);
+    UnitOfMeasure UnitOfMeasure = UnitOfMeasure.Each,
+    string? Barcode = null);
 
 public sealed record RepriceProductRequest(decimal Amount, string Currency);
 
@@ -19,4 +20,5 @@ public sealed record ProductResponse(
     string Name,
     MoneyDto Price,
     UnitOfMeasure UnitOfMeasure,
-    bool IsActive);
+    bool IsActive,
+    string? Barcode);
