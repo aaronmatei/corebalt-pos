@@ -1,5 +1,6 @@
 using Pos.Application.Abstractions;
 using Pos.Application.Catalog;
+using Pos.Application.Fiscalization;
 using Pos.Application.Sales;
 using Pos.Domain.Payments;
 using Pos.Domain.Sales;
@@ -23,16 +24,18 @@ public sealed class MpesaPaymentService
     private readonly IMpesaPaymentRepository _payments;
     private readonly IMpesaClient _mpesa;
     private readonly SaleCompletion _completion;
+    private readonly FiscalizationService _fiscalization;
     private readonly IClock _clock;
     private readonly IUnitOfWork _uow;
 
     public MpesaPaymentService(
         ICurrentContext ctx, ISaleRepository sales, IProductRepository products,
         IMpesaPaymentRepository payments, IMpesaClient mpesa, SaleCompletion completion,
-        IClock clock, IUnitOfWork uow)
+        FiscalizationService fiscalization, IClock clock, IUnitOfWork uow)
     {
         _ctx = ctx; _sales = sales; _products = products;
-        _payments = payments; _mpesa = mpesa; _completion = completion; _clock = clock; _uow = uow;
+        _payments = payments; _mpesa = mpesa; _completion = completion;
+        _fiscalization = fiscalization; _clock = clock; _uow = uow;
     }
 
     /// <summary>
@@ -116,6 +119,11 @@ public sealed class MpesaPaymentService
                 await TryFinalizeAsync(sale, ct2); // assigns receipt number + completes when fully paid
                 await _uow.SaveChangesAsync(ct2);
             }, ct);
+
+            // Fiscalize once the sale just completed (separate step — signing is a provider call, not
+            // held in the completion transaction). Idempotent, so polling after completion won't re-sign.
+            if (sale.Status == SaleStatus.Completed)
+                await _fiscalization.FiscalizeAsync(sale.TenantId, sale.StoreId, sale.Id, ct);
         }
 
         return BuildStatus(sale, payment);
@@ -149,6 +157,9 @@ public sealed class MpesaPaymentService
             await TryFinalizeAsync(sale, ct2);
             await _uow.SaveChangesAsync(ct2);
         }, ct);
+
+        if (sale.Status == SaleStatus.Completed)
+            await _fiscalization.FiscalizeAsync(sale.TenantId, sale.StoreId, sale.Id, ct);
 
         return new MpesaCallbackOutcome(true, "Reconciled.");
     }

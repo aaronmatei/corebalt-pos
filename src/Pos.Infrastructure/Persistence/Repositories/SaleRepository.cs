@@ -22,4 +22,12 @@ internal sealed class SaleRepository : ISaleRepository
     {
         await _db.Sales.AddAsync(sale, ct);
     }
+
+    public async Task<IReadOnlyList<Sale>> ListByFiscalStatusAsync(FiscalStatus status, int max, CancellationToken ct = default) =>
+        await _db.Sales
+            .AsSplitQuery()
+            .Where(s => s.FiscalStatus == status)
+            .OrderBy(s => s.CreatedAtUtc)
+            .Take(max)
+            .ToListAsync(ct);
 }

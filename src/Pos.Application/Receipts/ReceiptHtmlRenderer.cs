@@ -83,16 +83,27 @@ public static class ReceiptHtmlRenderer
     private static void RenderFiscal(StringBuilder sb, ReceiptFiscal f)
     {
         sb.Append("<div style=\"text-align:center\">");
-        if (f.Transmitted)
+        if (f.Fiscalized)
         {
             sb.Append(Strong("eTIMS FISCAL RECEIPT"));
             Append(sb, $"CU INV: {f.Cuin}");
-            if (!string.IsNullOrWhiteSpace(f.TransmittedAtEat)) Append(sb, $"Transmitted: {f.TransmittedAtEat} EAT");
-            if (!string.IsNullOrWhiteSpace(f.QrUrl)) Append(sb, $"QR: {f.QrUrl}");
+            if (!string.IsNullOrWhiteSpace(f.SignedAtEat)) Append(sb, $"Signed: {f.SignedAtEat} EAT");
+            if (!string.IsNullOrWhiteSpace(f.SyncedAtEat)) Append(sb, $"Synced: {f.SyncedAtEat} EAT");
+            if (!string.IsNullOrWhiteSpace(f.QrData))
+            {
+                // Render the QR target from QrData (a KRA verification URL). A scannable QR raster
+                // component drops in later; the link is the on-screen preview of what it encodes.
+                sb.Append("<div>Scan to verify:</div>");
+                sb.Append("<div><a href=\"").Append(E(f.QrData)).Append("\">").Append(E(f.QrData)).Append("</a></div>");
+            }
+        }
+        else if (f.Status == "NotRequired")
+        {
+            sb.Append(Strong("NON-FISCAL / TRAINING"));
         }
         else
         {
-            sb.Append(Strong(f.StatusText)); // "eTIMS: PENDING TRANSMISSION"
+            sb.Append(Strong(f.StatusText)); // e.g. "eTIMS: NOT FISCALIZED"
         }
         sb.Append("</div>");
     }

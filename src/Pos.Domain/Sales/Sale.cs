@@ -38,12 +38,56 @@ public sealed class Sale : AggregateRoot, ITenantScoped, IStoreScoped, IAuditabl
     // Frozen at completion: the VAT-inclusive grand total (the immutable fact the receipt prints).
     public Money GrandTotal { get; private set; } = Money.Zero();
 
-    // eTIMS fiscal fields — NULL until the Tax module transmits the sale to KRA. CUIN, signature and
-    // the QR are minted by eTIMS on transmission and cannot be generated locally.
+    // eTIMS fiscal fields — filled AFTER completion by the fiscalization seam (NOT part of the sale's
+    // immutable commercial facts). CUIN, signature and the QR are minted by the CU/eTIMS at sign time.
+    public FiscalStatus FiscalStatus { get; private set; } = FiscalStatus.NotRequired;
     public string? EtimsCuin { get; private set; }
     public string? EtimsSignature { get; private set; }
-    public string? EtimsQrUrl { get; private set; }
-    public DateTimeOffset? EtimsTransmittedAtUtc { get; private set; }
+    public string? EtimsQrUrl { get; private set; }      // QR payload (KRA verification URL)
+    public DateTimeOffset? EtimsSignedAtUtc { get; private set; }
+    public DateTimeOffset? EtimsTransmittedAtUtc { get; private set; } // set when synced to KRA
+    public int FiscalSyncAttempts { get; private set; }
+
+    /// <summary>True once locally signed — the guard that makes fiscalization idempotent (never re-sign).</summary>
+    public bool IsFiscalized => EtimsCuin is not null;
+
+    /// <summary>Stamp the CU/eTIMS signature onto the completed sale (Signed). Idempotent: ignored if already signed.</summary>
+    public void ApplyFiscalSignature(string cuin, string signature, string qrData, DateTimeOffset signedAtUtc)
+    {
+        EnsureCompleted();
+        if (IsFiscalized) return;
+        EtimsCuin = cuin;
+        EtimsSignature = signature;
+        EtimsQrUrl = qrData;
+        EtimsSignedAtUtc = signedAtUtc;
+        FiscalStatus = FiscalStatus.Signed;
+    }
+
+    /// <summary>Mark the signed sale as transmitted/accepted by KRA.</summary>
+    public void MarkFiscalSynced(DateTimeOffset transmittedAtUtc)
+    {
+        EnsureCompleted();
+        if (FiscalStatus == FiscalStatus.Synced) return;
+        if (FiscalStatus != FiscalStatus.Signed)
+            throw new InvalidOperationException("Only a Signed sale can be marked Synced.");
+        EtimsTransmittedAtUtc = transmittedAtUtc;
+        FiscalStatus = FiscalStatus.Synced;
+    }
+
+    /// <summary>Record a failed sync attempt; flips to Failed once the attempt budget is spent.</summary>
+    public void RecordFiscalSyncFailure(int maxAttempts)
+    {
+        EnsureCompleted();
+        FiscalSyncAttempts++;
+        if (FiscalSyncAttempts >= maxAttempts) FiscalStatus = FiscalStatus.Failed;
+    }
+
+    /// <summary>Signing itself failed (provider rejected) — terminal for this attempt.</summary>
+    public void MarkFiscalFailed()
+    {
+        EnsureCompleted();
+        FiscalStatus = FiscalStatus.Failed;
+    }
 
     public DateTimeOffset CreatedAtUtc { get; private set; }
     public Guid? CreatedBy { get; private set; }
@@ -194,6 +238,12 @@ public sealed class Sale : AggregateRoot, ITenantScoped, IStoreScoped, IAuditabl
     {
         if (Status != SaleStatus.Open)
             throw new InvalidOperationException($"Sale is {Status}; only Open sales can be modified.");
+    }
+
+    private void EnsureCompleted()
+    {
+        if (Status != SaleStatus.Completed)
+            throw new InvalidOperationException($"Sale is {Status}; fiscalization applies only to a Completed sale.");
     }
 
     private void Touch() => UpdatedAtUtc = DateTimeOffset.UtcNow;

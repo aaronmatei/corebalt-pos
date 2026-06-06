@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Pos.Api.Contracts;
 using Pos.Application.Abstractions;
+using Pos.Application.Fiscalization;
 using Pos.Application.Sales;
 
 namespace Pos.Api.Endpoints;
@@ -17,6 +18,8 @@ internal static class SalesEndpoints
         g.MapPost("/checkout", async (
             CheckoutRequest req,
             CheckoutService checkout,
+            FiscalizationService fiscal,
+            ICurrentContext ctx,
             CancellationToken ct) =>
         {
             var result = await checkout.CheckoutAsync(
@@ -25,6 +28,8 @@ internal static class SalesEndpoints
                 req.Lines.Select(l => new CheckoutLine(l.ProductId, l.Quantity)).ToList(),
                 req.Tenders.Select(t => new CheckoutTender(t.Type, t.Amount, t.Reference)).ToList(),
                 ct);
+            // Fiscalize right after the sale is committed, so the receipt fetched next has the fiscal block.
+            await fiscal.FiscalizeAsync(ctx.TenantId, ctx.StoreId, result.SaleId, ct);
             return Results.Created($"/api/v1/sales/{result.SaleId}",
                 new CompleteSaleResponse(result.SaleId, result.Total, result.ChangeDue, result.Currency));
         });
@@ -61,9 +66,12 @@ internal static class SalesEndpoints
         g.MapPost("/{saleId:guid}/complete", async (
             Guid saleId,
             CheckoutService checkout,
+            FiscalizationService fiscal,
+            ICurrentContext ctx,
             CancellationToken ct) =>
         {
             var result = await checkout.CompleteAsync(saleId, ct);
+            await fiscal.FiscalizeAsync(ctx.TenantId, ctx.StoreId, result.SaleId, ct);
             return Results.Ok(new CompleteSaleResponse(
                 result.SaleId, result.Total, result.ChangeDue, result.Currency));
         });

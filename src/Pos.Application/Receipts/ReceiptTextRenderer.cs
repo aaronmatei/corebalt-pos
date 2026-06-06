@@ -83,18 +83,24 @@ public static class ReceiptTextRenderer
 
     private static void RenderFiscal(StringBuilder sb, ReceiptFiscal f, int cols)
     {
-        if (f.Transmitted)
+        if (f.Fiscalized)
         {
             Line(sb, Center("eTIMS FISCAL RECEIPT", cols));
             Line(sb, LeftRight("CU INV:", f.Cuin ?? "", cols));
-            if (!string.IsNullOrWhiteSpace(f.TransmittedAtEat)) Line(sb, $"Transmitted: {f.TransmittedAtEat} EAT");
-            // The QR bitmap is an ESC/POS command emitted at print time; show the URL as a placeholder.
-            Line(sb, Center("[QR CODE]", cols));
-            foreach (var l in WrapCentered(f.QrUrl ?? "", cols)) Line(sb, l);
+            if (!string.IsNullOrWhiteSpace(f.SignedAtEat)) Line(sb, $"Signed: {f.SignedAtEat} EAT");
+            if (!string.IsNullOrWhiteSpace(f.SyncedAtEat)) Line(sb, $"Synced: {f.SyncedAtEat} EAT");
+            // Native ESC/POS QR raster comes with the printer driver; for now print the QR payload,
+            // char-wrapped so the long URL still fits the paper width.
+            Line(sb, "Scan to verify (QR):");
+            foreach (var chunk in CharWrap(f.QrData ?? "", cols)) Line(sb, chunk);
+        }
+        else if (f.Status == "NotRequired")
+        {
+            Line(sb, Center("*** NON-FISCAL / TRAINING ***", cols));
         }
         else
         {
-            Line(sb, Center(f.StatusText, cols)); // "eTIMS: PENDING TRANSMISSION"
+            Line(sb, Center(f.StatusText, cols)); // e.g. "eTIMS: NOT FISCALIZED"
         }
     }
 
@@ -120,6 +126,13 @@ public static class ReceiptTextRenderer
     }
 
     private static string Truncate(string s, int max) => s.Length <= max ? s : s[..Math.Max(0, max)];
+
+    private static IEnumerable<string> CharWrap(string s, int cols)
+    {
+        if (string.IsNullOrEmpty(s)) yield break;
+        for (var i = 0; i < s.Length; i += cols)
+            yield return s.Substring(i, Math.Min(cols, s.Length - i));
+    }
 
     private static IEnumerable<string> WrapCentered(string s, int cols)
     {

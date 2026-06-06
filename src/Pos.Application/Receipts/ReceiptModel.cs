@@ -55,11 +55,17 @@ public sealed record ReceiptModel(
         var paid = tenders.Aggregate(0m, (s, t) => s + t.Amount);
         var change = paid > sale.GrandTotal.Amount ? paid - sale.GrandTotal.Amount : 0m;
 
-        var transmitted = !string.IsNullOrWhiteSpace(sale.EtimsCuin);
+        var fiscalized = sale.EtimsCuin is not null;
         var fiscal = new ReceiptFiscal(
-            transmitted, sale.EtimsCuin, sale.EtimsSignature, sale.EtimsQrUrl,
-            Eat(sale.EtimsTransmittedAtUtc),
-            transmitted ? $"eTIMS CU INV: {sale.EtimsCuin}" : "eTIMS: PENDING TRANSMISSION");
+            Status: sale.FiscalStatus.ToString(),
+            Fiscalized: fiscalized,
+            Cuin: sale.EtimsCuin,
+            QrData: sale.EtimsQrUrl,
+            SignedAtEat: Eat(sale.EtimsSignedAtUtc),
+            SyncedAtEat: Eat(sale.EtimsTransmittedAtUtc),
+            StatusText: fiscalized
+                ? $"eTIMS CU INV: {sale.EtimsCuin}"
+                : sale.FiscalStatus == FiscalStatus.NotRequired ? "NON-FISCAL / TRAINING" : "eTIMS: NOT FISCALIZED");
 
         var legend = sale.VatSummary
             .Select(v => new ReceiptLegend(options.TaxCode(v.TaxClass), ReceiptOptions.ClassLabel(v.TaxClass)))
@@ -89,7 +95,7 @@ public sealed record ReceiptItem(string Description, string QtyLine, decimal Lin
 public sealed record ReceiptVatLine(string TaxCode, string ClassLabel, decimal Taxable, decimal Vat);
 public sealed record ReceiptTotals(decimal Subtotal, decimal TotalVat, decimal GrandTotal);
 public sealed record ReceiptTender(string Type, decimal Amount, string? Reference);
-public sealed record ReceiptFiscal(bool Transmitted, string? Cuin, string? Signature, string? QrUrl, string? TransmittedAtEat, string StatusText);
+public sealed record ReceiptFiscal(string Status, bool Fiscalized, string? Cuin, string? QrData, string? SignedAtEat, string? SyncedAtEat, string StatusText);
 public sealed record ReceiptLegend(string Code, string Label);
 
 public static class ReceiptFormat

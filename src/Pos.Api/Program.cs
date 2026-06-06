@@ -1,13 +1,16 @@
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.EntityFrameworkCore;
+using Pos.Api;
 using Pos.Api.Auth;
 using Pos.Api.Endpoints;
 using Pos.Api.Errors;
 using Pos.Application.Abstractions;
+using Pos.Application.Fiscalization;
 using Pos.Application.Payments;
 using Pos.Application.Receipts;
 using Pos.Application.Sales;
 using Pos.Infrastructure;
+using Pos.Infrastructure.Fiscalization;
 using Pos.Infrastructure.Mpesa;
 using Pos.Infrastructure.Persistence;
 
@@ -44,6 +47,26 @@ builder.Services.AddScoped<ReceiptService>();
 // Human-readable receipt numbers: branch-prefixed, per-(tenant,store) sequence (e.g. "MB-000123").
 builder.Services.AddSingleton(new ReceiptNumberFormatter(builder.Configuration["Store:BranchCode"] ?? "MB"));
 builder.Services.AddScoped<SaleCompletion>();
+
+// eTIMS fiscalization seam (config section "Etims"). Only the fake/training provider exists today;
+// the real VSCU/OSCU client drops in behind IFiscalizationProvider once real credentials are present.
+var etims = new EtimsOptions
+{
+    Enabled = bool.TryParse(builder.Configuration["Etims:Enabled"], out var etimsEnabled) && etimsEnabled,
+    Mode = Enum.TryParse<EtimsMode>(builder.Configuration["Etims:Mode"], out var etimsMode) ? etimsMode : EtimsMode.Vscu,
+    DeviceSerial = builder.Configuration["Etims:DeviceSerial"] ?? "",
+    BranchId = builder.Configuration["Etims:BranchId"] ?? "",
+    CmcKey = builder.Configuration["Etims:CmcKey"] ?? "",
+    BaseUrl = builder.Configuration["Etims:BaseUrl"] ?? "",
+    SyncIntervalSeconds = int.TryParse(builder.Configuration["Etims:SyncIntervalSeconds"], out var etimsInterval) ? etimsInterval : 30,
+    SyncMaxAttempts = int.TryParse(builder.Configuration["Etims:SyncMaxAttempts"], out var etimsAttempts) ? etimsAttempts : 5,
+};
+builder.Services.AddSingleton(etims);
+builder.Services.AddSingleton<IFiscalizationProvider, FakeEtimsProvider>(); // real provider selected by etims.HasRealCredentials later
+builder.Services.AddScoped<FiscalizationService>();
+builder.Services.AddScoped<FiscalSyncService>();
+if (etims.Enabled && !builder.Environment.IsEnvironment("Testing"))
+    builder.Services.AddHostedService<EtimsSyncWorker>(); // tests drive FiscalSyncService directly
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentContext, HeaderCurrentContext>();

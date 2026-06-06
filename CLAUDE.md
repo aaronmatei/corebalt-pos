@@ -30,9 +30,10 @@ Offline-first: a till/branch must keep selling when the network drops.
   Payments (MpesaPayment — the M-Pesa reconciliation ledger)
 - `src/Pos.Application` — ports (repositories, IUnitOfWork, IClock, **IMpesaClient**) + use cases
   `CheckoutService` (cash) and `MpesaPaymentService` (async M-Pesa: initiate/query/callback);
-  `Receipts/` (ReceiptModel projection + fixed-width text + HTML renderers + ReceiptService)
+  `Receipts/` (ReceiptModel projection + renderers); `Fiscalization/` (IFiscalizationProvider,
+  FiscalizationService, FiscalSyncService, EtimsOptions)
 - `src/Pos.Infrastructure` — PosDbContext, EF configurations, repositories, outbox interceptor,
-  **DarajaMpesaClient** (Mpesa/), DI; `Persistence/Migrations` holds the EF migrations + model snapshot
+  **DarajaMpesaClient** (Mpesa/), **FakeEtimsProvider** (Fiscalization/), DI; `Persistence/Migrations`
 - `src/Pos.Api` — ASP.NET Core 10 minimal-API store-server host: catalog + checkout + inventory over
   HTTP. Thin endpoints delegating to `CheckoutService`; header-based identity (`Auth/`)
 - `src/Pos.Till` — Avalonia (.NET 10, MVVM/CommunityToolkit) desktop till. A **pure HTTP client**
@@ -53,7 +54,7 @@ dotnet ef database update --project src/Pos.Infrastructure --startup-project sam
 dotnet run  --project samples/Pos.Persistence.Demo   # save→reload a sale, print the outbox row
 dotnet run  --project src/Pos.Api                    # store-server host on http://localhost:5080; auto-applies migrations in Development
 dotnet run  --project src/Pos.Till                   # Avalonia till (pure API client); talks to :5080
-dotnet test                                          # domain + API integration tests (51)
+dotnet test                                          # domain + API integration tests (53)
 ```
 Receipt header comes from the `Store` config section (LegalName/KraPin/BranchName/BranchAddress/
 Phone/VatNumber/Currency) — config-swappable, defaults to Corebalt Technologies.
@@ -67,8 +68,18 @@ Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Databa
   persistence + transactional outbox, `InitialCreate` migration), step 3 (`Pos.Api`
   store-server host + `Pos.Api.Tests` integration tests), step 4 (`Pos.Till` Avalonia client), and
   step 5 (real M-Pesa via Daraja STK push, as an async pending→confirmed flow), and step 6
-  (fiscal receipt incl. human receipt numbers). All six projects target `net10.0`; `dotnet test`
-  is green at 51 (29 domain + 22 API).
+  (fiscal receipt incl. human receipt numbers), and step 7 (eTIMS fiscalization SEAM — eTIMS-ready,
+  NOT real fiscalization). All six projects target `net10.0`; `dotnet test` is green at 53 (29 domain + 24 API).
+- **eTIMS seam (mirrors the M-Pesa provider pattern):** `IFiscalizationProvider.SignAsync/SyncAsync`
+  with `FakeEtimsProvider` (training mode — deterministic "TEST-…" CUIN from the receipt number, fake
+  signature, KRA-shaped QR URL; SyncAsync a logged no-op). Config "Etims": Enabled, Mode (Vscu/Oscu),
+  blank DeviceSerial/BranchId/CmcKey/BaseUrl placeholders (seller PIN from Store). `Sale.FiscalStatus`
+  (NotRequired/Signed/Synced/Failed) + EtimsCuin/Signature/QrUrl/SignedAt/TransmittedAt/SyncAttempts.
+  After checkout commits, `FiscalizationService.FiscalizeAsync` signs (if Enabled) → Signed and
+  persists CUIN/QR (idempotent — never re-signs on reprint); disabled → NotRequired. `EtimsSyncWorker`
+  (BackgroundService over `FiscalSyncService`) transmits Signed→Synced with retry, Failed after N.
+  The receipt fiscal block renders CUIN + QR when signed, else a "NON-FISCAL / TRAINING" note. The
+  real KRA VSCU/OSCU client drops in behind the interface (selected by `Etims.HasRealCredentials`).
 - **Receipt number:** `Sale.ReceiptNumber` (e.g. "MB-000123") — store-authoritative, from a
   per-(TenantId,StoreId) counter row (`receipt_counters`) incremented atomically via upsert inside
   the completion transaction (`IUnitOfWork.ExecuteInTransactionAsync` + `SaleCompletion`), NOT a
@@ -81,7 +92,7 @@ Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Databa
   eTIMS fields (CUIN/signature/QR/transmittedAt), all null until the Tax module transmits.
   `GET /api/v1/sales/{id}/receipt?cols=48|32` projects the persisted sale + the "Store" config section
   into a `ReceiptModel` and renders deterministic (byte-identical) thermal text + an HTML preview; the
-  fiscal block prints "eTIMS: PENDING TRANSMISSION" until the fields are filled.
+  fiscal block renders the CUIN + QR once signed (see the eTIMS seam above).
 - **M-Pesa (async, NEVER faked as synchronous):** a `Tender` has a `Status` (Pending/Confirmed/Failed)
   + `ProviderReference`; cash is Confirmed on creation; `Paid` counts only Confirmed tenders and
   `Sale.Complete()` refuses while any tender is Pending. STK flow: `POST /api/v1/sales/mpesa/checkout`

@@ -246,6 +246,27 @@ per-class VAT summary, and the grand total — inside the existing checkout tran
 
 The till fetches and shows the rendered receipt after each completed sale.
 
+## eTIMS fiscalization seam (step 7)
+
+This makes the POS **eTIMS-ready** — it is NOT real KRA fiscalization. The real VSCU/OSCU client
+drops in behind `IFiscalizationProvider` later; until then a **fake/training provider** runs.
+
+- Config section **"Etims"**: `Enabled`, `Mode` (Vscu/Oscu), and blank onboarding placeholders
+  `DeviceSerial`/`BranchId`/`CmcKey`/`BaseUrl`. The seller PIN comes from `Store:KraPin`. The fake is
+  used while `Enabled` and no real credentials are present (`HasRealCredentials`).
+- `FakeEtimsProvider.SignAsync` mints a clearly-fake **deterministic** CUIN (`TEST-` + receipt
+  number), a fake signature, and a QR payload shaped like a KRA verification URL containing the CUIN.
+  `SyncAsync` is a logged no-op success.
+- `Sale.FiscalStatus` (`NotRequired` / `Signed` / `Synced` / `Failed`) + the eTIMS fields. After a
+  sale is committed, `FiscalizationService` signs it (if enabled) → **Signed**, persisting the CUIN/QR
+  so a receipt fetched right after shows the fiscal block. It's **idempotent** — reprints never
+  re-sign. Disabled → **NotRequired** and the receipt prints a **"NON-FISCAL / TRAINING"** note.
+- `EtimsSyncWorker` (a `BackgroundService` over `FiscalSyncService`) is the seam for the real KRA
+  batch upload: it transmits Signed-but-not-Synced sales → **Synced**, retrying on the interval and
+  flipping to **Failed** after `SyncMaxAttempts`. With the fake it's instant success.
+- The thermal receipt prints the CUIN + the QR payload string (native ESC/POS QR raster comes with
+  the printer driver); the HTML preview renders the QR target as a link.
+
 ## Roadmap (anticipated in design choices)
 - Single-store supermarket: S1 multi-lane foundation, S2 weighed goods + scales, S3 cash office,
   S4 promotions + loyalty, S5 procurement.

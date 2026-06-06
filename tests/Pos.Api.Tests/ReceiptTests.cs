@@ -76,16 +76,18 @@ public sealed class ReceiptTests(PosApiFixture fx)
         model.Tenders.Should().ContainSingle(t => t.Type == nameof(TenderType.Mpesa) && t.Reference == "FAKE12RECEIPT");
         model.Change.Should().Be(0m);
 
-        // Fiscal block: PENDING stub (eTIMS not transmitted)
-        model.Fiscal.Transmitted.Should().BeFalse();
-        model.Fiscal.StatusText.Should().Contain("PENDING TRANSMISSION");
+        // Fiscal block: eTIMS is enabled in the test host → the sale is signed by the fake provider.
+        model.Fiscal.Fiscalized.Should().BeTrue();
+        model.Fiscal.Status.Should().Be("Signed");
+        model.Fiscal.Cuin.Should().StartWith("TEST-");
 
-        // Rendered text: weighed line, formatted money, fiscal stub
+        // Rendered text: weighed line, formatted money, fiscal block with the CUIN
         receipt.Text.Should().Contain("1.250 kg @ 200.00");
         receipt.Text.Should().Contain("GRAND TOTAL");
         receipt.Text.Should().Contain("476.00");
-        receipt.Text.Should().Contain("eTIMS: PENDING TRANSMISSION");
-        receipt.Html.Should().Contain("PENDING TRANSMISSION");
+        receipt.Text.Should().Contain("eTIMS FISCAL RECEIPT");
+        receipt.Text.Should().Contain(model.Fiscal.Cuin!);
+        receipt.Html.Should().Contain(model.Fiscal.Cuin!);
 
         // ── Reprint is byte-identical ──
         var again = (await (await client.GetAsync($"/api/v1/sales/{init.SaleId}/receipt"))

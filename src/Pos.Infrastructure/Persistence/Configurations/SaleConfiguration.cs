@@ -109,11 +109,14 @@ internal sealed class SaleConfiguration : IEntityTypeConfiguration<Sale>
             m.Property(p => p.Currency).HasColumnName("grand_total_currency").HasMaxLength(3);
         });
 
-        // eTIMS fiscal fields — nullable, filled later by the Tax module on transmission.
+        // eTIMS fiscal fields — filled by the fiscalization seam after completion.
+        b.Property(s => s.FiscalStatus).HasColumnName("fiscal_status").HasConversion<int>();
         b.Property(s => s.EtimsCuin).HasColumnName("etims_cuin").HasMaxLength(128);
         b.Property(s => s.EtimsSignature).HasColumnName("etims_signature").HasMaxLength(512);
         b.Property(s => s.EtimsQrUrl).HasColumnName("etims_qr_url").HasMaxLength(512);
+        b.Property(s => s.EtimsSignedAtUtc).HasColumnName("etims_signed_at_utc").HasColumnType("timestamptz");
         b.Property(s => s.EtimsTransmittedAtUtc).HasColumnName("etims_transmitted_at_utc").HasColumnType("timestamptz");
+        b.Property(s => s.FiscalSyncAttempts).HasColumnName("fiscal_sync_attempts");
 
         // Routes queries on the tenant/store partition.
         b.HasIndex(s => new { s.TenantId, s.StoreId, s.Id }).HasDatabaseName("ix_sales_tenant_store_id");
@@ -125,6 +128,7 @@ internal sealed class SaleConfiguration : IEntityTypeConfiguration<Sale>
         b.Ignore(s => s.BalanceDue);
         b.Ignore(s => s.IsFullyPaid);
         b.Ignore(s => s.HasPendingTenders);
+        b.Ignore(s => s.IsFiscalized);
         // The public read-only projections share the backing fields above — don't double-map.
         b.Ignore(s => s.Lines);
         b.Ignore(s => s.Tenders);
