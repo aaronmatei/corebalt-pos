@@ -15,5 +15,8 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
+    <!-- Pin away from the transitive 9.0.0 / 10.0.0 that NU1903 flags
+         (GHSA-37gx-xxp4-5rgx, GHSA-w3x6-4m5h-cxqf). 10.0.8 is the latest patched stable. -->
+    <PackageReference Include="System.Security.Cryptography.Xml" Version="10.0.8" />
   </ItemGroup>
 </Project>

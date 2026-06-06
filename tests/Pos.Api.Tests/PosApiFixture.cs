@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 using Pos.Api.Auth;
 using Pos.Infrastructure.Persistence;
 using Pos.SharedKernel.Ids;
@@ -14,14 +15,17 @@ namespace Pos.Api.Tests;
 
 /// <summary>
 /// Boots the API against a dedicated `pos_test` Postgres database so the dev `pos` database
-/// is never touched by the test run. The connection string is derived from POS_DB_TEST,
-/// or — if that isn't set — POS_DB with the database swapped to pos_test. Migrations run
-/// once on fixture init; tests isolate by minting a fresh TenantId per case.
+/// is never touched by the test run. The connection string is read from POS_TEST_DB; if the
+/// variable isn't set we fall back to the same credentials the README's docker container
+/// (postgres / pos / localhost:5432) so a fresh checkout runs green without ceremony.
+/// The pos_test database is created on first run if it doesn't exist; migrations run on
+/// fixture init; tests isolate by minting a fresh TenantId per case.
 /// </summary>
 public sealed class PosApiFixture : IAsyncLifetime
 {
-    private const string DefaultPassword = "pos"; // matches CLAUDE.md's docker default
-    private const string TestDatabase    = "pos_test";
+    /// <summary>The connection string used when POS_TEST_DB isn't set. Matches the README docker setup.</summary>
+    public const string DefaultConnectionString =
+        "Host=localhost;Port=5432;Database=pos_test;Username=postgres;Password=pos";
 
     public WebApplicationFactory<Program> Factory { get; private set; } = default!;
     public string ConnectionString { get; private set; } = string.Empty;
@@ -33,7 +37,12 @@ public sealed class PosApiFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        ConnectionString = ResolveTestConnectionString();
+        ConnectionString = Environment.GetEnvironmentVariable("POS_TEST_DB") ?? DefaultConnectionString;
+
+        // EF's MigrateAsync does NOT create the database itself — it just runs the migration
+        // scripts against an existing one. We create pos_test up front by connecting to the
+        // maintenance "postgres" database and issuing CREATE DATABASE if it isn't there.
+        await EnsureDatabaseExistsAsync(ConnectionString);
 
         // Program reads POS_DB at startup; point it at pos_test for the WebApplicationFactory.
         Environment.SetEnvironmentVariable("POS_DB", ConnectionString);
@@ -65,28 +74,29 @@ public sealed class PosApiFixture : IAsyncLifetime
         return (client, tenant, store, user);
     }
 
-    private static string ResolveTestConnectionString()
+    private static async Task EnsureDatabaseExistsAsync(string conn)
     {
-        var explicitOverride = Environment.GetEnvironmentVariable("POS_DB_TEST");
-        if (!string.IsNullOrWhiteSpace(explicitOverride)) return explicitOverride;
+        var builder = new NpgsqlConnectionStringBuilder(conn);
+        var dbName = builder.Database
+            ?? throw new InvalidOperationException("Connection string is missing Database=.");
 
-        var devConn = Environment.GetEnvironmentVariable("POS_DB");
-        if (!string.IsNullOrWhiteSpace(devConn))
-            return SwapDatabase(devConn, TestDatabase);
+        // Reconnect to the maintenance database to query pg_database + create if missing.
+        builder.Database = "postgres";
+        await using var c = new NpgsqlConnection(builder.ConnectionString);
+        await c.OpenAsync();
 
-        return $"Host=localhost;Port=5432;Database={TestDatabase};Username=postgres;Password={DefaultPassword}";
-    }
-
-    private static string SwapDatabase(string conn, string newDb)
-    {
-        var parts = conn.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        for (int i = 0; i < parts.Length; i++)
+        await using (var check = new NpgsqlCommand("SELECT 1 FROM pg_database WHERE datname = @name", c))
         {
-            if (parts[i].StartsWith("Database=", StringComparison.OrdinalIgnoreCase))
-                parts[i] = $"Database={newDb}";
+            check.Parameters.AddWithValue("@name", dbName);
+            if (await check.ExecuteScalarAsync() is not null) return;
         }
-        return string.Join(';', parts);
+
+        // CREATE DATABASE doesn't accept query parameters; quote the identifier safely.
+        await using var create = new NpgsqlCommand($"CREATE DATABASE {QuoteIdentifier(dbName)}", c);
+        await create.ExecuteNonQueryAsync();
     }
+
+    private static string QuoteIdentifier(string ident) => "\"" + ident.Replace("\"", "\"\"") + "\"";
 }
 
 [CollectionDefinition(Name)]
