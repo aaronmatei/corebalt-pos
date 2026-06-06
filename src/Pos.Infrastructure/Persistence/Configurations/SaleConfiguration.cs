@@ -19,6 +19,7 @@ internal sealed class SaleConfiguration : IEntityTypeConfiguration<Sale>
         b.Property(s => s.CashierId).HasColumnName("cashier_id").IsRequired();
         b.Property(s => s.Status).HasColumnName("status").HasConversion<int>();
         b.Property(s => s.Currency).HasColumnName("currency").HasMaxLength(3).IsRequired();
+        b.Property(s => s.ReceiptNumber).HasColumnName("receipt_number").HasMaxLength(32);
 
         b.Property(s => s.CreatedAtUtc).HasColumnName("created_at_utc").HasColumnType("timestamptz");
         b.Property(s => s.CreatedBy).HasColumnName("created_by");

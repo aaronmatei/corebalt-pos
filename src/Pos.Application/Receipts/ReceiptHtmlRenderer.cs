@@ -26,9 +26,10 @@ public static class ReceiptHtmlRenderer
         sb.Append("</div>").Append(Hr);
 
         // Meta
-        Append(sb, $"Receipt: {m.Meta.ReceiptNo}");
+        sb.Append("<div><strong>Receipt No: ").Append(E(m.Meta.ReceiptNo)).Append("</strong></div>");
         Append(sb, $"Date: {m.Meta.DateTimeEat} EAT");
         Append(sb, $"Cashier: {m.Meta.Cashier}  Till: {m.Meta.Register}");
+        sb.Append("<div style=\"color:#888;font-size:10px\">Ref: ").Append(E(m.Meta.Ref)).Append("</div>");
         sb.Append(Hr);
 
         // Items

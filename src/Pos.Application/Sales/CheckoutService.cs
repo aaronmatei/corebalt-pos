@@ -1,7 +1,5 @@
 using Pos.Application.Abstractions;
 using Pos.Application.Catalog;
-using Pos.Application.Inventory;
-using Pos.Domain.Inventory;
 using Pos.Domain.Sales;
 using Pos.SharedKernel;
 
@@ -18,16 +16,16 @@ public sealed class CheckoutService
     private readonly ICurrentContext _ctx;
     private readonly ISaleRepository _sales;
     private readonly IProductRepository _products;
-    private readonly IStockMovementRepository _stock;
+    private readonly SaleCompletion _completion;
     private readonly IUnitOfWork _uow;
 
     public CheckoutService(
         ICurrentContext ctx,
         ISaleRepository sales,
         IProductRepository products,
-        IStockMovementRepository stock,
+        SaleCompletion completion,
         IUnitOfWork uow)
-    { _ctx = ctx; _sales = sales; _products = products; _stock = stock; _uow = uow; }
+    { _ctx = ctx; _sales = sales; _products = products; _completion = completion; _uow = uow; }
 
     /// <summary>Open a fresh sale on a register. Returns the sale id (UUIDv7).</summary>
     public async Task<Guid> StartAsync(Guid registerId, string currency = "KES", CancellationToken ct = default)
@@ -66,25 +64,20 @@ public sealed class CheckoutService
     }
 
     /// <summary>
-    /// Complete a sale. Also writes one negative-delta StockMovement per line in the SAME
-    /// unit of work, so a crash during checkout either commits the completed sale + the
-    /// movements together, or commits neither — that's how the append-only inventory
-    /// invariant survives partial failure.
+    /// Complete a sale. Stamps the receipt number, writes one negative-delta StockMovement per line,
+    /// and commits — all in ONE transaction, so the receipt-number increment, the completed sale, the
+    /// movements and the outbox rows commit together or not at all.
     /// </summary>
     public async Task<CheckoutResult> CompleteAsync(Guid saleId, CancellationToken ct = default)
     {
         var sale = await RequireSaleAsync(saleId, ct);
-        sale.Complete();
-
-        var movements = sale.Lines.Select(line => StockMovement.Record(
-            _ctx.TenantId, _ctx.StoreId, line.ProductId,
-            -line.Quantity, StockMovementReason.Sale, sourceRef: sale.Id));
-        await _stock.AddRangeAsync(movements, ct);
-
-        await _uow.SaveChangesAsync(ct);
-
-        var change = sale.BalanceDue.Amount < 0 ? -sale.BalanceDue.Amount : 0m;
-        return new CheckoutResult(sale.Id, sale.Subtotal.Amount, change, sale.Currency);
+        return await _uow.ExecuteInTransactionAsync(async ct2 =>
+        {
+            await _completion.FinalizeAsync(sale, ct2);
+            await _uow.SaveChangesAsync(ct2);
+            var change = sale.BalanceDue.Amount < 0 ? -sale.BalanceDue.Amount : 0m;
+            return new CheckoutResult(sale.Id, sale.Subtotal.Amount, change, sale.Currency);
+        }, ct);
     }
 
     /// <summary>
@@ -121,18 +114,14 @@ public sealed class CheckoutService
         foreach (var t in tenders ?? Array.Empty<CheckoutTender>())
             sale.AddTender(t.Type, new Money(t.Amount, sale.Currency), t.Reference);
 
-        sale.Complete();
-
-        var movements = sale.Lines.Select(line => StockMovement.Record(
-            _ctx.TenantId, _ctx.StoreId, line.ProductId,
-            -line.Quantity, StockMovementReason.Sale, sourceRef: sale.Id));
-
-        await _sales.AddAsync(sale, ct);
-        await _stock.AddRangeAsync(movements, ct);
-        await _uow.SaveChangesAsync(ct); // atomic: sale + lines + tenders + movements + outbox
-
-        var change = sale.BalanceDue.Amount < 0 ? -sale.BalanceDue.Amount : 0m;
-        return new CheckoutResult(sale.Id, sale.Subtotal.Amount, change, sale.Currency);
+        return await _uow.ExecuteInTransactionAsync(async ct2 =>
+        {
+            await _completion.FinalizeAsync(sale, ct2); // receipt number + complete + stock movements
+            await _sales.AddAsync(sale, ct2);
+            await _uow.SaveChangesAsync(ct2); // atomic: counter + sale + lines + tenders + movements + outbox
+            var change = sale.BalanceDue.Amount < 0 ? -sale.BalanceDue.Amount : 0m;
+            return new CheckoutResult(sale.Id, sale.Subtotal.Amount, change, sale.Currency);
+        }, ct);
     }
 
     private async Task<Sale> RequireSaleAsync(Guid saleId, CancellationToken ct) =>

@@ -1,8 +1,6 @@
 using Pos.Application.Abstractions;
 using Pos.Application.Catalog;
-using Pos.Application.Inventory;
 using Pos.Application.Sales;
-using Pos.Domain.Inventory;
 using Pos.Domain.Payments;
 using Pos.Domain.Sales;
 using Pos.SharedKernel;
@@ -22,19 +20,19 @@ public sealed class MpesaPaymentService
     private readonly ICurrentContext _ctx;
     private readonly ISaleRepository _sales;
     private readonly IProductRepository _products;
-    private readonly IStockMovementRepository _stock;
     private readonly IMpesaPaymentRepository _payments;
     private readonly IMpesaClient _mpesa;
+    private readonly SaleCompletion _completion;
     private readonly IClock _clock;
     private readonly IUnitOfWork _uow;
 
     public MpesaPaymentService(
         ICurrentContext ctx, ISaleRepository sales, IProductRepository products,
-        IStockMovementRepository stock, IMpesaPaymentRepository payments, IMpesaClient mpesa,
+        IMpesaPaymentRepository payments, IMpesaClient mpesa, SaleCompletion completion,
         IClock clock, IUnitOfWork uow)
     {
-        _ctx = ctx; _sales = sales; _products = products; _stock = stock;
-        _payments = payments; _mpesa = mpesa; _clock = clock; _uow = uow;
+        _ctx = ctx; _sales = sales; _products = products;
+        _payments = payments; _mpesa = mpesa; _completion = completion; _clock = clock; _uow = uow;
     }
 
     /// <summary>
@@ -112,9 +110,12 @@ public sealed class MpesaPaymentService
         if (payment.IsPending)
         {
             var q = await _mpesa.StkQueryAsync(payment.CheckoutRequestId, ct);
-            ApplyResult(sale, payment, q.State, q.ResultCode, q.ResultDescription, q.MpesaReceipt);
-            await TryFinalizeAsync(sale, ct);
-            await _uow.SaveChangesAsync(ct);
+            await _uow.ExecuteInTransactionAsync(async ct2 =>
+            {
+                ApplyResult(sale, payment, q.State, q.ResultCode, q.ResultDescription, q.MpesaReceipt);
+                await TryFinalizeAsync(sale, ct2); // assigns receipt number + completes when fully paid
+                await _uow.SaveChangesAsync(ct2);
+            }, ct);
         }
 
         return BuildStatus(sale, payment);
@@ -142,9 +143,12 @@ public sealed class MpesaPaymentService
             ?? throw new InvalidOperationException($"Sale {payment.SaleId} not found for payment {payment.Id}.");
 
         var state = cb.ResultCode == 0 ? MpesaQueryState.Success : MpesaQueryState.Failed;
-        ApplyResult(sale, payment, state, cb.ResultCode, cb.ResultDescription, cb.MpesaReceipt);
-        await TryFinalizeAsync(sale, ct);
-        await _uow.SaveChangesAsync(ct);
+        await _uow.ExecuteInTransactionAsync(async ct2 =>
+        {
+            ApplyResult(sale, payment, state, cb.ResultCode, cb.ResultDescription, cb.MpesaReceipt);
+            await TryFinalizeAsync(sale, ct2);
+            await _uow.SaveChangesAsync(ct2);
+        }, ct);
 
         return new MpesaCallbackOutcome(true, "Reconciled.");
     }
@@ -170,12 +174,9 @@ public sealed class MpesaPaymentService
     private async Task TryFinalizeAsync(Sale sale, CancellationToken ct)
     {
         if (!sale.IsFullyPaid) return;
-        sale.Complete();
-        // Same invariant-#3 fan-out as CheckoutService.CompleteAsync: one negative-delta movement
-        // per line, written in the SAME unit of work as the completed sale + outbox row.
-        var movements = sale.Lines.Select(l => StockMovement.Record(
-            sale.TenantId, sale.StoreId, l.ProductId, -l.Quantity, StockMovementReason.Sale, sourceRef: sale.Id));
-        await _stock.AddRangeAsync(movements, ct);
+        // Shared finalization: stamps the receipt number, completes the sale, writes stock movements
+        // — all within the caller's transaction so the receipt-number increment commits atomically.
+        await _completion.FinalizeAsync(sale, ct);
     }
 
     private static MpesaStatusResult BuildStatus(Sale sale, MpesaPayment payment)

@@ -228,6 +228,12 @@ fact): Kenyan retail prices are VAT-inclusive, so `Sale.Complete()` backs VAT ou
 (standard-rated: `VAT = total × 16/116`; zero-rated/exempt: 0) and stores the per-line figures, a
 per-class VAT summary, and the grand total — inside the existing checkout transaction.
 
+- **Receipt number** (`Sale.ReceiptNumber`, e.g. `MB-000123`): human-readable and
+  **store-authoritative** — a per-`(TenantId, StoreId)` counter row incremented atomically (upsert)
+  *inside the completion transaction*, never a global sequence (which would break store ownership /
+  offline operation). Formatted in one place (`ReceiptNumberFormatter`; branch code from
+  `Store:BranchCode`). The UUIDv7 stays the internal id / idempotency key and is kept as a small "Ref"
+  in the model/HTML for support lookups.
 - `Product.TaxClass`: `StandardRated` (16%) / `ZeroRated` / `Exempt` (default standard).
 - `GET /api/v1/sales/{id}/receipt?cols=48` (80mm; `32` = 58mm) returns the `ReceiptModel`, a
   fixed-width monospace **text** render for ESC/POS, and a simple **HTML** preview for the till.

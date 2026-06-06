@@ -41,6 +41,10 @@ builder.Services.AddSingleton(store);
 builder.Services.AddSingleton(new ReceiptOptions());
 builder.Services.AddScoped<ReceiptService>();
 
+// Human-readable receipt numbers: branch-prefixed, per-(tenant,store) sequence (e.g. "MB-000123").
+builder.Services.AddSingleton(new ReceiptNumberFormatter(builder.Configuration["Store:BranchCode"] ?? "MB"));
+builder.Services.AddScoped<SaleCompletion>();
+
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentContext, HeaderCurrentContext>();
 

@@ -8,4 +8,13 @@ namespace Pos.Application.Abstractions;
 public interface IUnitOfWork
 {
     Task<int> SaveChangesAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Run <paramref name="work"/> (which typically increments the receipt sequence then SaveChanges)
+    /// inside a single database transaction, so the receipt-number increment commits atomically with
+    /// the sale + stock movements + outbox rows.
+    /// </summary>
+    Task<T> ExecuteInTransactionAsync<T>(Func<CancellationToken, Task<T>> work, CancellationToken ct = default);
+
+    Task ExecuteInTransactionAsync(Func<CancellationToken, Task> work, CancellationToken ct = default);
 }

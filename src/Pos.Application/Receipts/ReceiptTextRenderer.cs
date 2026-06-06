@@ -25,8 +25,9 @@ public static class ReceiptTextRenderer
         Line(sb, Center($"Tel: {m.Header.Phone}", cols));
         Line(sb, Rule('=', cols));
 
-        // ── Meta ──
-        Line(sb, LeftRight("Receipt:", m.Meta.ReceiptNo, cols));
+        // ── Meta ── (human Receipt No is what's printed; the UUIDv7 Ref stays in the model + HTML
+        // preview for support lookups — it won't fit a 58mm line, so it's not printed on the thermal).
+        Line(sb, LeftRight("Receipt No:", m.Meta.ReceiptNo, cols));
         Line(sb, $"Date: {m.Meta.DateTimeEat} EAT");
         Line(sb, LeftRight($"Cashier: {m.Meta.Cashier}", $"Till: {m.Meta.Register}", cols));
         Line(sb, Rule('-', cols));

@@ -53,7 +53,7 @@ dotnet ef database update --project src/Pos.Infrastructure --startup-project sam
 dotnet run  --project samples/Pos.Persistence.Demo   # save→reload a sale, print the outbox row
 dotnet run  --project src/Pos.Api                    # store-server host on http://localhost:5080; auto-applies migrations in Development
 dotnet run  --project src/Pos.Till                   # Avalonia till (pure API client); talks to :5080
-dotnet test                                          # domain + API integration tests (49)
+dotnet test                                          # domain + API integration tests (51)
 ```
 Receipt header comes from the `Store` config section (LegalName/KraPin/BranchName/BranchAddress/
 Phone/VatNumber/Currency) — config-swappable, defaults to Corebalt Technologies.
@@ -67,7 +67,13 @@ Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Databa
   persistence + transactional outbox, `InitialCreate` migration), step 3 (`Pos.Api`
   store-server host + `Pos.Api.Tests` integration tests), step 4 (`Pos.Till` Avalonia client), and
   step 5 (real M-Pesa via Daraja STK push, as an async pending→confirmed flow), and step 6
-  (fiscal receipt). All six projects target `net10.0`; `dotnet test` is green at 49 (29 domain + 20 API).
+  (fiscal receipt incl. human receipt numbers). All six projects target `net10.0`; `dotnet test`
+  is green at 51 (29 domain + 22 API).
+- **Receipt number:** `Sale.ReceiptNumber` (e.g. "MB-000123") — store-authoritative, from a
+  per-(TenantId,StoreId) counter row (`receipt_counters`) incremented atomically via upsert inside
+  the completion transaction (`IUnitOfWork.ExecuteInTransactionAsync` + `SaleCompletion`), NOT a
+  global sequence. Formatted in one place (`ReceiptNumberFormatter`, branch code from `Store:BranchCode`).
+  The UUIDv7 stays the internal id/idempotency key (printed as a small "Ref" only in the model/HTML).
 - **VAT + receipt (KRA):** `Product.TaxClass` (StandardRated 16% / ZeroRated / Exempt; prices are
   VAT-INCLUSIVE). At completion `Sale.Complete()` backs VAT out of each line and STORES it (per-line
   TaxClass + VatAmount + TaxableAmount, a per-class VAT summary, and the grand total) inside the

@@ -29,7 +29,8 @@ public sealed record ReceiptModel(
             store.KraPin, store.VatNumber, store.Phone);
 
         var meta = new ReceiptMeta(
-            ReceiptNo: sale.Id.ToString(),
+            ReceiptNo: sale.ReceiptNumber ?? sale.Id.ToString(), // human number; falls back to id pre-completion
+            Ref: sale.Id.ToString(),                              // internal UUIDv7 — kept for support lookups
             DateTimeEat: Eat(sale.CompletedAtUtc) ?? "",
             Cashier: Short(sale.CashierId),
             Register: Short(sale.RegisterId),
@@ -83,7 +84,7 @@ public sealed record ReceiptModel(
 }
 
 public sealed record ReceiptHeader(string LegalName, string BranchName, string BranchAddress, string KraPin, string VatNumber, string Phone);
-public sealed record ReceiptMeta(string ReceiptNo, string DateTimeEat, string Cashier, string Register, string Branch);
+public sealed record ReceiptMeta(string ReceiptNo, string Ref, string DateTimeEat, string Cashier, string Register, string Branch);
 public sealed record ReceiptItem(string Description, string QtyLine, decimal LineTotal, string TaxCode);
 public sealed record ReceiptVatLine(string TaxCode, string ClassLabel, decimal Taxable, decimal Vat);
 public sealed record ReceiptTotals(decimal Subtotal, decimal TotalVat, decimal GrandTotal);

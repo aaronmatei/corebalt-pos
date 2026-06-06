@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Pos.Application.Abstractions;
 using Pos.Application.Catalog;
+using Pos.Application.Receipts;
 using Pos.Application.Sales;
 using Pos.Domain.Catalog;
 using Pos.Domain.Sales;
@@ -24,6 +25,8 @@ var demoCtx = new DemoCurrentContext(
 var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddSingleton<ICurrentContext>(demoCtx);
 builder.Services.AddInfrastructure(conn);
+builder.Services.AddSingleton(new ReceiptNumberFormatter("MB"));
+builder.Services.AddScoped<SaleCompletion>();
 builder.Services.AddScoped<CheckoutService>();
 
 using var host = builder.Build();

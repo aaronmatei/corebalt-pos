@@ -24,6 +24,13 @@ public sealed class Sale : AggregateRoot, ITenantScoped, IStoreScoped, IAuditabl
     public SaleStatus Status { get; private set; }
     public string Currency { get; private set; }
 
+    /// <summary>
+    /// Human-readable, store-authoritative receipt number (e.g. "MB-000123"), stamped in the checkout
+    /// transaction from a per-(tenant,store) sequence. Distinct from <see cref="Entity.Id"/> (the
+    /// UUIDv7 stays the internal id / idempotency key). Null until the sale completes.
+    /// </summary>
+    public string? ReceiptNumber { get; private set; }
+
     public IReadOnlyList<SaleLine> Lines => _lines.AsReadOnly();
     public IReadOnlyList<Tender> Tenders => _tenders.AsReadOnly();
     public IReadOnlyList<SaleVatSummaryLine> VatSummary => _vatSummary.AsReadOnly();
@@ -116,6 +123,21 @@ public sealed class Sale : AggregateRoot, ITenantScoped, IStoreScoped, IAuditabl
     {
         EnsureOpen();
         RequireTender(tenderId).Fail();
+        Touch();
+    }
+
+    /// <summary>
+    /// Stamp the human-readable receipt number, once, while the sale is still open (it's then frozen
+    /// by Complete()). The caller supplies the formatted value from the store's sequence.
+    /// </summary>
+    public void AssignReceiptNumber(string receiptNumber)
+    {
+        EnsureOpen();
+        if (!string.IsNullOrEmpty(ReceiptNumber))
+            throw new InvalidOperationException("Receipt number is already assigned.");
+        if (string.IsNullOrWhiteSpace(receiptNumber))
+            throw new ArgumentException("Receipt number is required.", nameof(receiptNumber));
+        ReceiptNumber = receiptNumber;
         Touch();
     }
 

@@ -22,4 +22,19 @@ public sealed class PosDbContext : DbContext, IUnitOfWork
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(PosDbContext).Assembly);
     }
+
+    public async Task<T> ExecuteInTransactionAsync<T>(Func<CancellationToken, Task<T>> work, CancellationToken ct = default)
+    {
+        var strategy = Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            await using var tx = await Database.BeginTransactionAsync(ct);
+            var result = await work(ct);
+            await tx.CommitAsync(ct);
+            return result;
+        });
+    }
+
+    public Task ExecuteInTransactionAsync(Func<CancellationToken, Task> work, CancellationToken ct = default) =>
+        ExecuteInTransactionAsync(async innerCt => { await work(innerCt); return true; }, ct);
 }
