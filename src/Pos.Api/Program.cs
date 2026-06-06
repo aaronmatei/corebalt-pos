@@ -53,17 +53,9 @@ if (app.Environment.IsDevelopment())
     scope.ServiceProvider.GetRequiredService<PosDbContext>().Database.Migrate();
 }
 
-// TEMP DIAGNOSTIC (remove once STK push works): confirm the RUNNING process actually loaded the
-// M-Pesa secrets (passkey/secret masked). ShortCode is a public till number, shown in full.
-app.Logger.LogInformation(
-    "M-Pesa options loaded: BaseUrl={BaseUrl} ShortCode={ShortCode} TxnType={Txn} " +
-    "ConsumerKey={CK} ConsumerSecret={CS} Passkey={PK} IsConfigured={Cfg}",
-    mpesaOptions.BaseUrl, mpesaOptions.ShortCode, mpesaOptions.TransactionType,
-    MaskSecret(mpesaOptions.ConsumerKey), MaskSecret(mpesaOptions.ConsumerSecret),
-    MaskSecret(mpesaOptions.Passkey), mpesaOptions.IsConfigured);
-
-static string MaskSecret(string? s) =>
-    string.IsNullOrEmpty(s) ? "(MISSING!)" : $"len={s.Length},…{(s.Length >= 4 ? s[^4..] : s)}";
+// Surface whether M-Pesa is configured (no secrets) so a misconfigured host is obvious in logs.
+app.Logger.LogInformation("M-Pesa: ShortCode={ShortCode} BaseUrl={BaseUrl} Configured={Configured}",
+    mpesaOptions.ShortCode, mpesaOptions.BaseUrl, mpesaOptions.IsConfigured);
 
 app.UseExceptionHandler();
 app.MapOpenApi();

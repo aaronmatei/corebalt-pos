@@ -25,6 +25,11 @@ public sealed class DarajaMpesaClient : IMpesaClient
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
+    // Daraja is CASE-SENSITIVE and requires PascalCase field names (BusinessShortCode, Password, …).
+    // JsonContent.Create() otherwise defaults to camelCase, which Daraja reads as a MISSING
+    // BusinessShortCode → "400.002.02 Invalid BusinessShortCode". Serialize requests names-as-declared.
+    private static readonly JsonSerializerOptions DarajaRequestJson = new() { PropertyNamingPolicy = null };
+
     public DarajaMpesaClient(HttpClient http, MpesaOptions options, ILogger<DarajaMpesaClient> log)
     {
         _o = options;
@@ -55,42 +60,14 @@ public sealed class DarajaMpesaClient : IMpesaClient
                 TransactionDesc = Trim(request.Description, 13)
             };
 
-            // TEMP DIAGNOSTIC (remove once STK push works): the three raw Password inputs (passkey
-            // masked) + the request fields + the expected vs actual concatenation length. Proves the
-            // Password is Base64(ShortCode + Passkey + Timestamp) with the same ShortCode everywhere.
-            var pwInputLen = _o.ShortCode.Length + _o.Passkey.Length + timestamp.Length;
-            var tsValid = timestamp.Length == 14 && timestamp.All(char.IsAsciiDigit);
-            _log.LogInformation(
-                "STK password inputs: ShortCode='{ShortCode}'(len={ScLen}) Passkey(len={PkLen},…{PkTail}," +
-                " leadWs={LeadWs}, trailWs={TrailWs}) Timestamp='{Ts}'(len={TsLen}, 14digits={TsValid})" +
-                " | pwInputLen={PwLen} pwBase64Len={B64Len}",
-                _o.ShortCode, _o.ShortCode.Length, _o.Passkey.Length,
-                _o.Passkey.Length >= 4 ? _o.Passkey[^4..] : _o.Passkey,
-                _o.Passkey.Length > 0 && char.IsWhiteSpace(_o.Passkey[0]),
-                _o.Passkey.Length > 0 && char.IsWhiteSpace(_o.Passkey[^1]),
-                timestamp, timestamp.Length, tsValid, pwInputLen, password.Length);
-            _log.LogInformation(
-                "STK request → endpoint={Endpoint} BusinessShortCode={Bsc} PartyB={PartyB} " +
-                "TransactionType={Txn} Timestamp={Ts} Password={PwMasked}",
-                $"{_http.BaseAddress}mpesa/stkpush/v1/processrequest", _o.ShortCode, _o.ShortCode,
-                _o.TransactionType, timestamp, MaskTail(password));
-
             using var req = new HttpRequestMessage(HttpMethod.Post, "/mpesa/stkpush/v1/processrequest")
             {
-                Content = JsonContent.Create(body)
+                Content = JsonContent.Create(body, options: DarajaRequestJson)
             };
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
             using var resp = await _http.SendAsync(req, ct);
-            var raw = await resp.Content.ReadAsStringAsync(ct);
-
-            // TEMP DIAGNOSTIC (remove once STK push works): raw body + Daraja's server Date header.
-            // If DarajaDate's year/day differs from our Timestamp, the rejection is host-clock skew,
-            // not a malformed password.
-            _log.LogInformation("STK response ← HTTP {Status} DarajaDate={Date} raw={Raw}",
-                (int)resp.StatusCode, resp.Headers.Date, raw);
-
-            var payload = string.IsNullOrWhiteSpace(raw) ? null : JsonSerializer.Deserialize<StkPushResponse>(raw, Json);
+            var payload = await resp.Content.ReadFromJsonAsync<StkPushResponse>(Json, ct);
 
             if (resp.IsSuccessStatusCode && payload?.ResponseCode == "0")
                 return new StkPushResult(true, payload.CheckoutRequestID, payload.MerchantRequestID,
@@ -124,7 +101,7 @@ public sealed class DarajaMpesaClient : IMpesaClient
 
             using var req = new HttpRequestMessage(HttpMethod.Post, "/mpesa/stkpushquery/v1/query")
             {
-                Content = JsonContent.Create(body)
+                Content = JsonContent.Create(body, options: DarajaRequestJson)
             };
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
@@ -188,10 +165,6 @@ public sealed class DarajaMpesaClient : IMpesaClient
         var pw = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{_o.ShortCode}{_o.Passkey}{ts}"));
         return (ts, pw);
     }
-
-    /// <summary>Mask a secret for logs: show only its length and last 4 chars.</summary>
-    private static string MaskTail(string? s) =>
-        string.IsNullOrEmpty(s) ? "(empty!)" : $"len={s.Length},…{(s.Length >= 4 ? s[^4..] : s)}";
 
     /// <summary>07XXXXXXXX / +2547XXXXXXXX / 7XXXXXXXX → 2547XXXXXXXX (Daraja's MSISDN form).</summary>
     internal static string NormalizeMsisdn(string phone)
