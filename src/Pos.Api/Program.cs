@@ -23,9 +23,8 @@ builder.Services.AddScoped<CheckoutService>();
 // never hardcoded. Singleton client so its OAuth token cache survives across requests.
 var mpesaOptions = MpesaOptions.FromConfiguration(builder.Configuration);
 builder.Services.AddSingleton(mpesaOptions);
-builder.Services.AddSingleton<IMpesaClient>(sp =>
-    new DarajaMpesaClient(new HttpClient { BaseAddress = new Uri(mpesaOptions.BaseUrl) }, mpesaOptions,
-        sp.GetRequiredService<ILogger<DarajaMpesaClient>>()));
+builder.Services.AddSingleton<IMpesaClient>(_ =>
+    new DarajaMpesaClient(new HttpClient { BaseAddress = new Uri(mpesaOptions.BaseUrl) }, mpesaOptions));
 builder.Services.AddScoped<MpesaPaymentService>();
 
 builder.Services.AddHttpContextAccessor();
@@ -52,10 +51,6 @@ if (app.Environment.IsDevelopment())
     using var scope = app.Services.CreateScope();
     scope.ServiceProvider.GetRequiredService<PosDbContext>().Database.Migrate();
 }
-
-// Surface whether M-Pesa is configured (no secrets) so a misconfigured host is obvious in logs.
-app.Logger.LogInformation("M-Pesa: ShortCode={ShortCode} BaseUrl={BaseUrl} Configured={Configured}",
-    mpesaOptions.ShortCode, mpesaOptions.BaseUrl, mpesaOptions.IsConfigured);
 
 app.UseExceptionHandler();
 app.MapOpenApi();

@@ -3,7 +3,6 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
-using Microsoft.Extensions.Logging;
 using Pos.Application.Payments;
 
 namespace Pos.Infrastructure.Mpesa;
@@ -18,7 +17,6 @@ public sealed class DarajaMpesaClient : IMpesaClient
 {
     private readonly HttpClient _http;
     private readonly MpesaOptions _o;
-    private readonly ILogger<DarajaMpesaClient> _log;
     private readonly SemaphoreSlim _tokenLock = new(1, 1);
     private string? _token;
     private DateTimeOffset _tokenExpiresAt;
@@ -30,11 +28,10 @@ public sealed class DarajaMpesaClient : IMpesaClient
     // BusinessShortCode → "400.002.02 Invalid BusinessShortCode". Serialize requests names-as-declared.
     private static readonly JsonSerializerOptions DarajaRequestJson = new() { PropertyNamingPolicy = null };
 
-    public DarajaMpesaClient(HttpClient http, MpesaOptions options, ILogger<DarajaMpesaClient> log)
+    public DarajaMpesaClient(HttpClient http, MpesaOptions options)
     {
         _o = options;
         _http = http;
-        _log = log;
         _http.BaseAddress ??= new Uri(_o.BaseUrl);
     }
 
@@ -74,8 +71,6 @@ public sealed class DarajaMpesaClient : IMpesaClient
                     payload.ResponseCode, payload.ResponseDescription, null);
 
             var error = payload?.errorMessage ?? payload?.ResponseDescription ?? $"STK push rejected (HTTP {(int)resp.StatusCode}).";
-            _log.LogWarning("STK push rejected: ResponseCode={Code} errorCode={ErrCode} message={Message}",
-                payload?.ResponseCode, payload?.errorCode, error);
             return new StkPushResult(false, payload?.CheckoutRequestID, payload?.MerchantRequestID,
                 payload?.ResponseCode, payload?.ResponseDescription, error);
         }
