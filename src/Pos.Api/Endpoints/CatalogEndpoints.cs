@@ -21,12 +21,13 @@ internal static class CatalogEndpoints
             IUnitOfWork uow,
             CancellationToken ct) =>
         {
-            // SKU unique, and barcode unique when present (validated within this store's catalogue).
-            if (await products.FindBySkuAsync(ctx.TenantId, ctx.StoreId, req.Sku, ct) is not null)
-                return Results.Problem($"A product with SKU '{req.Sku}' already exists.", statusCode: StatusCodes.Status409Conflict);
-            if (!string.IsNullOrWhiteSpace(req.Barcode) &&
-                await products.FindByBarcodeAsync(ctx.TenantId, ctx.StoreId, req.Barcode, ct) is not null)
-                return Results.Problem($"A product with barcode '{req.Barcode}' already exists.", statusCode: StatusCodes.Status409Conflict);
+            // SKU unique per tenant, barcode unique per tenant when present (DB indexes are the backstop).
+            if (await products.SkuExistsAsync(ctx.TenantId, req.Sku.Trim(), ct: ct))
+                return Results.Problem($"A product with SKU '{req.Sku.Trim()}' already exists.", statusCode: StatusCodes.Status409Conflict);
+            var newBarcode = req.Barcode?.Trim();
+            if (!string.IsNullOrWhiteSpace(newBarcode) &&
+                await products.BarcodeExistsAsync(ctx.TenantId, newBarcode, ct: ct))
+                return Results.Problem($"A product with barcode '{newBarcode}' already exists.", statusCode: StatusCodes.Status409Conflict);
 
             var product = Product.Create(
                 ctx.TenantId, ctx.StoreId,
@@ -91,13 +92,11 @@ internal static class CatalogEndpoints
             var product = await products.GetAsync(ctx.TenantId, ctx.StoreId, id, ct);
             if (product is null) return Results.NotFound();
 
-            // Barcode stays unique when present (ignore the product's own row).
-            if (!string.IsNullOrWhiteSpace(req.Barcode))
-            {
-                var byBarcode = await products.FindByBarcodeAsync(ctx.TenantId, ctx.StoreId, req.Barcode, ct);
-                if (byBarcode is not null && byBarcode.Id != id)
-                    return Results.Problem($"A product with barcode '{req.Barcode}' already exists.", statusCode: StatusCodes.Status409Conflict);
-            }
+            // Barcode stays unique per tenant when present (ignore the product's own row).
+            var newBarcode = req.Barcode?.Trim();
+            if (!string.IsNullOrWhiteSpace(newBarcode) &&
+                await products.BarcodeExistsAsync(ctx.TenantId, newBarcode, excludingProductId: id, ct: ct))
+                return Results.Problem($"A product with barcode '{newBarcode}' already exists.", statusCode: StatusCodes.Status409Conflict);
 
             product.UpdateDetails(req.Name, req.Barcode, req.UnitOfMeasure, req.TaxClass);
             if (req.IsActive) product.Reactivate(); else product.Deactivate();

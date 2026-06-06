@@ -104,8 +104,9 @@ Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Databa
   reconciled by CheckoutRequestID + amount). The sale finalizes (complete + stock movements + outbox)
   only when the pending tender confirms. Daraja secrets come from user-secrets / `POS_MPESA_*` env —
   never hardcoded; tests use a fake `IMpesaClient` (no network). See README "M-Pesa (Daraja)".
-- **Back-office (products/pricing/stock):** `POST /products` (validates SKU unique + barcode unique
-  when present, per store), `PUT /products/{id}` (name/barcode/unit/tax-class/active),
+- **Back-office (products/pricing/stock):** `POST /products` (SKU unique + barcode unique when present,
+  **per tenant** — enforced by unique indexes `ux_products_tenant_sku` and `ux_products_tenant_barcode`
+  [filtered `WHERE barcode IS NOT NULL`], with app-level checks returning a clean 409 and a 23505 DB backstop), `PUT /products/{id}` (name/barcode/unit/tax-class/active),
   `POST /products/{id}/deactivate` (SOFT — never hard-delete; list defaults to active, `?includeInactive=true`),
   `PUT /products/{id}/price` (raises `ProductPriceChanged` to the outbox — audit + central-pricing seam;
   current Price stays for fast lookup). Stock is the append-only `StockMovement` ledger: `POST /inventory/receive`

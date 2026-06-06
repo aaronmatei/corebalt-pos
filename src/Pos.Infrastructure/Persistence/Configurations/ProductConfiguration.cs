@@ -27,15 +27,18 @@ internal sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
             m.Property(x => x.Currency).HasColumnName("price_currency").HasMaxLength(3);
         });
 
-        b.HasIndex(p => new { p.TenantId, p.StoreId, p.Sku })
+        // SKU is unique per TENANT (central-catalogue model: one SKU per tenant across all branches).
+        b.HasIndex(p => new { p.TenantId, p.Sku })
             .IsUnique()
-            .HasDatabaseName("ux_products_tenant_store_sku");
+            .HasDatabaseName("ux_products_tenant_sku");
 
-        // Scan-code lookups are indexed per tenant. Deliberately non-unique: the roadmap moves
-        // to several barcodes per product (and price-embedded EAN-13 from scales), so a unique
-        // constraint here would have to be torn down later. Nulls don't occupy the index.
+        // Barcode unique per tenant, but FILTERED to non-null rows — so many products may have no
+        // barcode while every real GTIN/EAN-13 stays unique. (A future multi-barcode model would move
+        // these to a child table; until then this is the right constraint.)
         b.HasIndex(p => new { p.TenantId, p.Barcode })
-            .HasDatabaseName("ix_products_tenant_barcode");
+            .IsUnique()
+            .HasFilter("barcode IS NOT NULL")
+            .HasDatabaseName("ux_products_tenant_barcode");
 
         b.Ignore(p => p.DomainEvents);
     }

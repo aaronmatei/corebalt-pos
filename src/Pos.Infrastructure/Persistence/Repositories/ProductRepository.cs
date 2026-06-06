@@ -32,4 +32,12 @@ internal sealed class ProductRepository : IProductRepository
 
     public async Task AddAsync(Product product, CancellationToken ct = default) =>
         await _db.Products.AddAsync(product, ct);
+
+    public Task<bool> SkuExistsAsync(Guid tenantId, string sku, Guid? excludingProductId = null, CancellationToken ct = default) =>
+        _db.Products.AnyAsync(p => p.TenantId == tenantId && p.Sku == sku
+            && (excludingProductId == null || p.Id != excludingProductId), ct);
+
+    public Task<bool> BarcodeExistsAsync(Guid tenantId, string barcode, Guid? excludingProductId = null, CancellationToken ct = default) =>
+        _db.Products.AnyAsync(p => p.TenantId == tenantId && p.Barcode == barcode
+            && (excludingProductId == null || p.Id != excludingProductId), ct);
 }

@@ -291,8 +291,11 @@ drops in behind `IFiscalizationProvider` later; until then a **fake/training pro
 Product/price management and stock receiving — API + domain only (no admin UI yet), holding the
 invariants (UUIDv7 ids, TenantId+StoreId on every row, append-only stock, on-hand always derived).
 
-- **Products:** create validates SKU unique and barcode unique (when present) within the store, price
-  ≥ 0. Update edits name/barcode/unit/tax-class/active. **Deactivate is soft** (`IsActive=false`,
+- **Products:** SKU unique and barcode unique (when present) **per tenant** — backed by unique
+  indexes (`ux_products_tenant_sku`; `ux_products_tenant_barcode` filtered `WHERE barcode IS NOT NULL`
+  so many products may have no barcode), with app-level checks returning a clean `409` (and a
+  Postgres `23505` backstop in the exception handler if the check loses a race). Price ≥ 0.
+  Update edits name/barcode/unit/tax-class/active. **Deactivate is soft** (`IsActive=false`,
   never a hard delete); list/search default to active, `?includeInactive=true` shows all.
 - **Pricing is never silent:** `PUT /products/{id}/price` raises a **`ProductPriceChanged`** domain
   event (old/new price, who, when) to the outbox — audit + the seam for central pricing (M2). The

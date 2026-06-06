@@ -17,4 +17,10 @@ public interface IProductRepository
     Task<IReadOnlyList<Product>> ListAsync(Guid tenantId, Guid storeId, bool includeInactive = false, CancellationToken ct = default);
 
     Task AddAsync(Product product, CancellationToken ct = default);
+
+    /// <summary>Does any product in the TENANT already use this SKU? (excludingProductId skips the row being updated.)</summary>
+    Task<bool> SkuExistsAsync(Guid tenantId, string sku, Guid? excludingProductId = null, CancellationToken ct = default);
+
+    /// <summary>Does any product in the TENANT already use this barcode?</summary>
+    Task<bool> BarcodeExistsAsync(Guid tenantId, string barcode, Guid? excludingProductId = null, CancellationToken ct = default);
 }
