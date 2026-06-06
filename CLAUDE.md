@@ -33,8 +33,10 @@ Offline-first: a till/branch must keep selling when the network drops.
   and `ProductService` + `StockService` (single home for product/stock orchestration, shared by the
   API and the back-office); `Receipts/`; `Fiscalization/`; `Identity/` (AuthService, StoreServerOptions, PosClaims)
 - `src/Pos.Infrastructure` — PosDbContext, EF configurations, repositories, outbox interceptor,
-  **DarajaMpesaClient** (Mpesa/), **FakeEtimsProvider** (Fiscalization/), **JwtTokenIssuer +
-  AspNetPasswordHasher** (Identity/), DI; `Persistence/Migrations`
+  **DarajaMpesaClient** (Mpesa/, per-tenant via MpesaSettingsResolver), **FakeEtimsProvider** (Fiscalization/),
+  **JwtTokenIssuer + AspNetPasswordHasher** (Identity/), **AesSecretProtector** (Security/),
+  **Printing/** (EscPosBuilder, MonoBitmap raster, ReceiptPreviewRenderer, Network/File/Null printers;
+  ImageSharp + QRCoder), DI; `Persistence/Migrations`
 - `src/Pos.Api` — ASP.NET Core 10 store-server host: minimal-API (auth + catalog + checkout + inventory,
   JWT bearer + role policies + dev-header bypass, `Auth/`) PLUS the **Blazor Server back-office**
   (`Components/` static-SSR pages, `BackOffice/` form-post endpoints, cookie auth, `wwwroot/`)
@@ -57,7 +59,7 @@ dotnet ef database update --project src/Pos.Infrastructure --startup-project sam
 dotnet run  --project samples/Pos.Persistence.Demo   # save→reload a sale, print the outbox row
 dotnet run  --project src/Pos.Api                    # store-server host on http://localhost:5080; auto-applies migrations in Development
 dotnet run  --project src/Pos.Till                   # Avalonia till (pure API client); talks to :5080
-dotnet test                                          # domain + API integration tests (81)
+dotnet test                                          # domain + API integration tests (89)
 ```
 Receipt header + currency come from the tenant's DB-backed `MerchantProfile` (set in the /setup wizard),
 NOT appsettings. A fresh install routes to `/setup`; you can't transact until provisioned. M-Pesa + eTIMS
@@ -80,7 +82,23 @@ Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Databa
   till PIN login), step 10 (Blazor Server **back-office** admin, manager-gated, hosted in the
   store-server process), step 11 (returns / voids / refunds — immutable credit notes), and step 12
   (per-client multi-tenant install: DB-backed merchant profile + per-tenant integration settings +
-  entitlements + first-run setup wizard). All six projects target `net10.0`; `dotnet test` is green at 81 (29 domain + 52 API).
+  entitlements + first-run setup wizard), and step 13 (thermal printing pipeline: per-register
+  PrinterProfile, ESC/POS builder, logo/QR rasterizer, Network/File/Null printers, PNG preview).
+  All six projects target `net10.0`; `dotnet test` is green at 89 (29 domain + 60 API).
+- **Thermal printing (per-register, hardware-free to build/test):** `PrinterProfile` per Register
+  (`Pos.Domain/Tenancy`): Transport (Null/File/Network), PaperWidth (80mm/576 dots → 48 cols, 58mm/384 →
+  32), HasCutter/HasCashDrawer/NativeQrSupported. `EscPosBuilder` (`Pos.Infrastructure/Printing`) turns
+  the persisted `ReceiptModel` (sale OR credit note) into ESC/POS: init, the CLIENT logo raster (from
+  MerchantProfile; text header if none — never Corebalt's), text body, QR (native `GS ( k` if
+  NativeQrSupported else a rasterized image), cut (`GS V` only if HasCutter, else feed), drawer-kick
+  (`ESC p` only if HasCashDrawer AND a cash tender). `MonoBitmap` rasterizes any logo (downscale+threshold)
+  or a QR (QRCoder) to 1-bit `GS v 0`. `IReceiptPrinter` impls: `EscPosNetworkPrinter` (TCP :9100),
+  `EscPosFilePrinter` (.escpos file), `NullPrinter` (default) — selected by `ReceiptPrinterRouter` per
+  transport. `ReceiptPreviewRenderer` draws the SAME model to a PNG at the dot width (ImageSharp + real
+  QR) — `GET /api/v1/sales/{id}/receipt/preview.png` (+ returns), `?paper=58`. `ReceiptOutputService`
+  ties build→print→preview; checkout + returns print via the register's profile (Null in dev). The
+  Corebalt mark (`wwwroot/assets/corebalt-mark-black-mono.png`, `BrandAssets`) prints ONLY in the
+  Powered-by footer. Only the final on-device acceptance check remains. Shared `ReceiptText` helpers.
 - **Vendor/tenant model (per-client installs):** Corebalt is the VENDOR; each retailer is a TENANT
   (one tenant per on-prem install, `TenantId` everywhere so it consolidates into shared cloud later).
   `MerchantProfile` (DB, `Pos.Domain/Tenancy`) is the CLIENT's identity (legal/trading name, KRA PIN,

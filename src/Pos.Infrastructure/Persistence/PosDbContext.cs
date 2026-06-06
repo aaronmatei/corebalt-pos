@@ -28,6 +28,7 @@ public sealed class PosDbContext : DbContext, IUnitOfWork
     public DbSet<MpesaSettings> MpesaSettings => Set<MpesaSettings>();
     public DbSet<EtimsSettings> EtimsSettings => Set<EtimsSettings>();
     public DbSet<Entitlements> Entitlements => Set<Entitlements>();
+    public DbSet<PrinterProfile> PrinterProfiles => Set<PrinterProfile>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

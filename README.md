@@ -378,6 +378,29 @@ cloud later. **Nothing client-specific is hardcoded.**
   setup — business profile, branch, currency, payment + eTIMS (or skip → stub), licence, and the
   **first manager** (no seeded-credential hunting). You can't transact until setup is complete.
 
+## Thermal printing (step 13)
+
+Drives ESC/POS from the persisted `ReceiptModel` (sales AND credit notes), fully verifiable without a
+printer — everything is per-tenant/per-register config.
+
+- **`PrinterProfile` per register (DB):** Transport (Network `host:9100` / File / Null), PaperWidth
+  (80mm → 576 dots / 48 cols, 58mm → 384 / 32), and capability flags HasCutter, HasCashDrawer,
+  NativeQrSupported. Defaults to Null / 80mm (safe in dev).
+- **`EscPosBuilder`:** init → CLIENT logo raster (from `MerchantProfile`; text header if none — never
+  Corebalt's) → text body → QR (native `GS ( k` if NativeQrSupported, else a rasterized image) → cut
+  (`GS V`, only with a cutter, else feed) → cash-drawer kick (`ESC p`, only with a drawer AND a cash
+  tender). `MonoBitmap` downscales+thresholds any logo and rasterizes the QR (QRCoder) to 1-bit `GS v 0`.
+- **`IReceiptPrinter`:** `EscPosNetworkPrinter` (raw TCP), `EscPosFilePrinter` (writes a `.escpos` file —
+  on Windows `copy /b file PRN`), `NullPrinter` (logs length; the dev/test default). A router picks the
+  implementation from the profile's transport.
+- **Visual preview (verify without hardware):** `ReceiptPreviewRenderer` draws the same model to a PNG
+  at the dot width with the client logo and a real rendered QR. `GET /api/v1/sales/{id}/receipt/preview.png`
+  and `GET /api/v1/returns/{id}/receipt/preview.png` (`?paper=58` for 58mm). What you see is what prints.
+- Checkout and returns build the bytes from the register's profile and send to the configured printer;
+  reprints use the persisted model so output is byte-identical. The Corebalt mark
+  (`wwwroot/assets/corebalt-mark-black-mono.png`) prints ONLY in the optional Powered-by footer.
+- Only the final on-physical-device acceptance check remains.
+
 ## Roadmap (anticipated in design choices)
 - Single-store supermarket: S1 multi-lane foundation, S2 weighed goods + scales, S3 cash office,
   S4 promotions + loyalty, S5 procurement.

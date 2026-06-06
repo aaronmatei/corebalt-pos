@@ -6,6 +6,7 @@ using Pos.Application.Fiscalization;
 using Pos.Application.Identity;
 using Pos.Application.Inventory;
 using Pos.Application.Payments;
+using Pos.Application.Printing;
 using Pos.Application.Sales;
 using Pos.Application.Tenancy;
 using Pos.Infrastructure.Identity;
@@ -13,6 +14,7 @@ using Pos.Infrastructure.Mpesa;
 using Pos.Infrastructure.Outbox;
 using Pos.Infrastructure.Persistence;
 using Pos.Infrastructure.Persistence.Repositories;
+using Pos.Infrastructure.Printing;
 using Pos.Infrastructure.Security;
 
 namespace Pos.Infrastructure;
@@ -62,6 +64,16 @@ public static class DependencyInjection
         services.AddScoped<SetupService>();
         services.AddScoped<MpesaSettingsResolver>();
         services.AddSingleton(new EtimsWorkerOptions());
+
+        // Thermal printing: per-register profile, ESC/POS builder, visual preview, and the printer
+        // router (Null/File/Network selected by the profile's transport — File/Null are the dev defaults).
+        services.AddScoped<IPrinterProfileRepository, PrinterProfileRepository>();
+        services.AddSingleton<IEscPosBuilder, EscPosBuilder>();
+        services.AddSingleton<IReceiptPreviewRenderer, ReceiptPreviewRenderer>();
+        services.AddSingleton<NullPrinter>();
+        services.AddSingleton<EscPosFilePrinter>();
+        services.AddSingleton<EscPosNetworkPrinter>();
+        services.AddSingleton<IReceiptPrinter, ReceiptPrinterRouter>();
 
         return services;
     }

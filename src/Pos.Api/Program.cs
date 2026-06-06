@@ -58,6 +58,13 @@ builder.Services.AddScoped<MpesaPaymentService>();
 // appsettings. Only the receipt-NUMBER prefix is config (a generic branch code, not merchant identity).
 builder.Services.AddSingleton(new ReceiptOptions());
 builder.Services.AddScoped<ReceiptService>();
+builder.Services.AddScoped<Pos.Application.Printing.ReceiptOutputService>(); // ESC/POS build + print + preview
+// Vendor mark for the optional "Powered by Corebalt POS" footer (NEVER the merchant logo).
+var markPath = Path.Combine(builder.Environment.ContentRootPath, "wwwroot", "assets", "corebalt-mark-black-mono.png");
+builder.Services.AddSingleton(new Pos.Application.Printing.BrandAssets
+{
+    PoweredByMark = File.Exists(markPath) ? File.ReadAllBytes(markPath) : null,
+});
 builder.Services.AddSingleton(new ReceiptNumberFormatter(builder.Configuration["Receipt:NumberPrefix"] ?? "POS"));
 builder.Services.AddScoped<SaleCompletion>();
 

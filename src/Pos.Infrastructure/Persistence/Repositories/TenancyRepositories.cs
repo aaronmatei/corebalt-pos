@@ -1,8 +1,21 @@
 using Microsoft.EntityFrameworkCore;
+using Pos.Application.Printing;
 using Pos.Application.Tenancy;
 using Pos.Domain.Tenancy;
 
 namespace Pos.Infrastructure.Persistence.Repositories;
+
+internal sealed class PrinterProfileRepository : IPrinterProfileRepository
+{
+    private readonly PosDbContext _db;
+    public PrinterProfileRepository(PosDbContext db) => _db = db;
+
+    public Task<PrinterProfile?> GetByRegisterAsync(Guid tenantId, Guid registerId, CancellationToken ct = default) =>
+        _db.PrinterProfiles.FirstOrDefaultAsync(p => p.TenantId == tenantId && p.RegisterId == registerId, ct);
+
+    public async Task AddAsync(PrinterProfile profile, CancellationToken ct = default) =>
+        await _db.PrinterProfiles.AddAsync(profile, ct);
+}
 
 internal sealed class MerchantProfileRepository : IMerchantProfileRepository
 {

@@ -1,0 +1,11 @@
+<Project>
+  <PropertyGroup>
+    <!--
+      NU1902 (SixLabors.ImageSharp 3.1.x): a moderate DoS advisory in the image decoder
+      (GHSA-rxmq-m78w-7wmc) with no patched release available offline at build time. ImageSharp is used
+      only to rasterize the merchant's own receipt logo + render the receipt preview — never to process
+      untrusted public uploads — so the exposure is low. Bump + remove this once a fixed 3.1.x ships.
+    -->
+    <NoWarn>$(NoWarn);NU1902</NoWarn>
+  </PropertyGroup>
+</Project>

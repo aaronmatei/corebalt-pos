@@ -83,6 +83,29 @@ internal sealed class EtimsSettingsConfiguration : IEntityTypeConfiguration<Etim
     }
 }
 
+internal sealed class PrinterProfileConfiguration : IEntityTypeConfiguration<PrinterProfile>
+{
+    public void Configure(EntityTypeBuilder<PrinterProfile> b)
+    {
+        b.ToTable("printer_profiles");
+        b.HasKey(p => p.Id);
+        b.Property(p => p.Id).HasColumnName("id");
+        b.Property(p => p.TenantId).HasColumnName("tenant_id").IsRequired();
+        b.Property(p => p.RegisterId).HasColumnName("register_id").IsRequired();
+        b.Property(p => p.Transport).HasColumnName("transport").HasConversion<int>();
+        b.Property(p => p.NetworkHost).HasColumnName("network_host").HasMaxLength(128);
+        b.Property(p => p.NetworkPort).HasColumnName("network_port");
+        b.Property(p => p.FilePath).HasColumnName("file_path").HasMaxLength(512);
+        b.Property(p => p.PaperWidth).HasColumnName("paper_width").HasConversion<int>();
+        b.Property(p => p.HasCutter).HasColumnName("has_cutter");
+        b.Property(p => p.HasCashDrawer).HasColumnName("has_cash_drawer");
+        b.Property(p => p.NativeQrSupported).HasColumnName("native_qr_supported");
+        b.HasIndex(p => new { p.TenantId, p.RegisterId }).IsUnique().HasDatabaseName("ux_printer_profiles_tenant_register");
+        b.Ignore(p => p.DotWidth);
+        b.Ignore(p => p.Columns);
+    }
+}
+
 internal sealed class EntitlementsConfiguration : IEntityTypeConfiguration<Entitlements>
 {
     public void Configure(EntityTypeBuilder<Entitlements> b)

@@ -19,6 +19,7 @@ internal static class SalesEndpoints
             CheckoutRequest req,
             CheckoutService checkout,
             FiscalizationService fiscal,
+            Pos.Application.Printing.ReceiptOutputService output,
             ICurrentContext ctx,
             CancellationToken ct) =>
         {
@@ -30,6 +31,8 @@ internal static class SalesEndpoints
                 ct);
             // Fiscalize right after the sale is committed, so the receipt fetched next has the fiscal block.
             await fiscal.FiscalizeAsync(ctx.TenantId, ctx.StoreId, result.SaleId, ct);
+            // Build ESC/POS for the register's printer + send it (NullPrinter by default; never fails the sale).
+            await output.PrintSaleAsync(req.RegisterId, result.SaleId, ct);
             return Results.Created($"/api/v1/sales/{result.SaleId}",
                 new CompleteSaleResponse(result.SaleId, result.Total, result.ChangeDue, result.Currency));
         });
