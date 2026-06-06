@@ -48,6 +48,9 @@ public sealed record MpesaStatusDto(
     Guid SaleId, string? CheckoutRequestId, string PaymentStatus, string SaleStatus,
     string? ResultDescription, string? Receipt, decimal? Total, decimal? ChangeDue, string Currency);
 
+// Receipt — only the rendered text/html are needed for display (the API also returns the model).
+public sealed record ReceiptDto(string Text, string Html, int Columns);
+
 public sealed record SaleLineDto(
     Guid Id, Guid ProductId, string Description, decimal Quantity, MoneyDto UnitPrice, MoneyDto LineTotal);
 

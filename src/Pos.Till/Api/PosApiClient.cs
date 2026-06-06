@@ -13,6 +13,7 @@ public interface IPosApiClient
     Task<ApiResult<SaleDto>> GetSaleAsync(Guid saleId, CancellationToken ct = default);
     Task<ApiResult<MpesaInitiateDto>> InitiateMpesaAsync(MpesaCheckoutRequestDto request, CancellationToken ct = default);
     Task<ApiResult<MpesaStatusDto>> GetMpesaStatusAsync(Guid saleId, CancellationToken ct = default);
+    Task<ApiResult<ReceiptDto>> GetReceiptAsync(Guid saleId, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -58,6 +59,9 @@ public sealed class PosApiClient : IPosApiClient, IDisposable
 
     public Task<ApiResult<MpesaStatusDto>> GetMpesaStatusAsync(Guid saleId, CancellationToken ct = default) =>
         SendAsync<MpesaStatusDto>(() => _http.GetAsync($"{ApiBase}/sales/mpesa/{saleId}/status", ct), ct);
+
+    public Task<ApiResult<ReceiptDto>> GetReceiptAsync(Guid saleId, CancellationToken ct = default) =>
+        SendAsync<ReceiptDto>(() => _http.GetAsync($"{ApiBase}/sales/{saleId}/receipt", ct), ct);
 
     private async Task<ApiResult<T>> SendAsync<T>(Func<Task<HttpResponseMessage>> send, CancellationToken ct)
     {

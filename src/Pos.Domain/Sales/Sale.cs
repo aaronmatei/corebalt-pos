@@ -1,5 +1,6 @@
 using Pos.SharedKernel;
 using Pos.SharedKernel.Ids;
+using Pos.Domain.Catalog;
 using Pos.Domain.Sales.Events;
 
 namespace Pos.Domain.Sales;
@@ -14,6 +15,7 @@ public sealed class Sale : AggregateRoot, ITenantScoped, IStoreScoped, IAuditabl
 {
     private readonly List<SaleLine> _lines = new();
     private readonly List<Tender> _tenders = new();
+    private readonly List<SaleVatSummaryLine> _vatSummary = new();
 
     public Guid TenantId { get; private set; }
     public Guid StoreId { get; private set; }     // the branch that owns this sale
@@ -24,6 +26,17 @@ public sealed class Sale : AggregateRoot, ITenantScoped, IStoreScoped, IAuditabl
 
     public IReadOnlyList<SaleLine> Lines => _lines.AsReadOnly();
     public IReadOnlyList<Tender> Tenders => _tenders.AsReadOnly();
+    public IReadOnlyList<SaleVatSummaryLine> VatSummary => _vatSummary.AsReadOnly();
+
+    // Frozen at completion: the VAT-inclusive grand total (the immutable fact the receipt prints).
+    public Money GrandTotal { get; private set; } = Money.Zero();
+
+    // eTIMS fiscal fields — NULL until the Tax module transmits the sale to KRA. CUIN, signature and
+    // the QR are minted by eTIMS on transmission and cannot be generated locally.
+    public string? EtimsCuin { get; private set; }
+    public string? EtimsSignature { get; private set; }
+    public string? EtimsQrUrl { get; private set; }
+    public DateTimeOffset? EtimsTransmittedAtUtc { get; private set; }
 
     public DateTimeOffset CreatedAtUtc { get; private set; }
     public Guid? CreatedBy { get; private set; }
@@ -52,11 +65,12 @@ public sealed class Sale : AggregateRoot, ITenantScoped, IStoreScoped, IAuditabl
     public Money BalanceDue => Subtotal.Subtract(Paid);
     public bool HasPendingTenders => _tenders.Any(t => t.IsPending);
 
-    public void AddLine(Guid productId, string description, decimal quantity, Money unitPrice)
+    public void AddLine(Guid productId, string description, decimal quantity, Money unitPrice,
+        TaxClass taxClass = TaxClass.StandardRated, UnitOfMeasure unitOfMeasure = UnitOfMeasure.Each)
     {
         EnsureOpen();
         if (unitPrice.Currency != Currency) throw new InvalidOperationException("Line currency mismatch.");
-        _lines.Add(new SaleLine(Uuid7.NewGuid(), productId, description, quantity, unitPrice));
+        _lines.Add(new SaleLine(Uuid7.NewGuid(), productId, description, quantity, unitPrice, taxClass, unitOfMeasure));
         Touch();
     }
 
@@ -119,10 +133,32 @@ public sealed class Sale : AggregateRoot, ITenantScoped, IStoreScoped, IAuditabl
         if (_lines.Count == 0) throw new InvalidOperationException("Cannot complete an empty sale.");
         if (HasPendingTenders) throw new InvalidOperationException("Sale has a pending tender; confirm or fail it before completing.");
         if (BalanceDue.Amount > 0) throw new InvalidOperationException("Sale is not fully paid.");
+
+        FreezeTax();
         Status = SaleStatus.Completed;
         CompletedAtUtc = DateTimeOffset.UtcNow;
         Touch();
         Raise(new SaleCompleted(Id, TenantId, StoreId, Subtotal.Amount, Currency));
+    }
+
+    /// <summary>
+    /// Back VAT out of every line, then store the per-class VAT summary + grand total as immutable
+    /// facts. The summary is the SUM of the per-line figures so the receipt reconciles exactly; the
+    /// classes are ordered by enum value so reprints are byte-identical.
+    /// </summary>
+    private void FreezeTax()
+    {
+        foreach (var line in _lines) line.FinalizeTax();
+
+        _vatSummary.Clear();
+        foreach (var group in _lines.GroupBy(l => l.TaxClass).OrderBy(g => (int)g.Key))
+        {
+            var taxable = group.Aggregate(Money.Zero(Currency), (sum, l) => sum.Add(l.TaxableAmount));
+            var vat = group.Aggregate(Money.Zero(Currency), (sum, l) => sum.Add(l.VatAmount));
+            _vatSummary.Add(new SaleVatSummaryLine(group.Key, taxable, vat));
+        }
+
+        GrandTotal = Subtotal;
     }
 
     /// <summary>True when the sale can be finalized now (no pending tenders and fully paid).</summary>

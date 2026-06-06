@@ -18,6 +18,7 @@ internal sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
         b.Property(p => p.Name).HasColumnName("name").HasMaxLength(200).IsRequired();
         b.Property(p => p.Barcode).HasColumnName("barcode").HasMaxLength(64);
         b.Property(p => p.UnitOfMeasure).HasColumnName("unit_of_measure").HasConversion<int>();
+        b.Property(p => p.TaxClass).HasColumnName("tax_class").HasConversion<int>();
         b.Property(p => p.IsActive).HasColumnName("is_active");
 
         b.OwnsOne(p => p.Price, m =>

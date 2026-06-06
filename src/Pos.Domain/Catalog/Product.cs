@@ -25,12 +25,16 @@ public sealed class Product : AggregateRoot, ITenantScoped, IStoreScoped
     public string? Barcode { get; private set; }
     public Money Price { get; private set; } = Money.Zero();
     public UnitOfMeasure UnitOfMeasure { get; private set; }
+
+    /// <summary>KRA VAT class. Drives how VAT is backed out of the (VAT-inclusive) price at checkout.</summary>
+    public TaxClass TaxClass { get; private set; }
     public bool IsActive { get; private set; }
 
     private Product() { } // EF
 
     public static Product Create(Guid tenantId, Guid storeId, string sku, string name,
-        Money price, UnitOfMeasure unit = UnitOfMeasure.Each, string? barcode = null)
+        Money price, UnitOfMeasure unit = UnitOfMeasure.Each, string? barcode = null,
+        TaxClass taxClass = TaxClass.StandardRated)
     {
         if (string.IsNullOrWhiteSpace(sku)) throw new ArgumentException("Sku is required.", nameof(sku));
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("Name is required.", nameof(name));
@@ -46,6 +50,7 @@ public sealed class Product : AggregateRoot, ITenantScoped, IStoreScoped
             Barcode = NormalizeBarcode(barcode),
             Price = price,
             UnitOfMeasure = unit,
+            TaxClass = taxClass,
             IsActive = true
         };
     }

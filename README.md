@@ -135,6 +135,7 @@ is the only route that doesn't need them.
 | POST   | `/api/v1/sales/{saleId}/tenders`                 | Cash / Mpesa / Card / AirtelMoney                    |
 | POST   | `/api/v1/sales/{saleId}/complete`                | Writes -delta StockMovements in the same UoW         |
 | GET    | `/api/v1/sales/{saleId}`                         |                                                      |
+| GET    | `/api/v1/sales/{saleId}/receipt`                 | Fiscal receipt (`?cols=48`/`32`): model + text + HTML |
 | GET    | `/api/v1/inventory/{productId}/on-hand`          | SUM of stock_movements (never a mutable column)      |
 | GET    | `/healthz`                                       | No auth                                              |
 
@@ -218,6 +219,26 @@ Sandbox STK pushes go to the test MSISDN you request a prompt for (use Safaricom
 number). Without credentials, `mpesa/checkout` fails gracefully (the tender is marked Failed and the
 till offers retry / cash) — cash checkout is unaffected. The test suite uses a fake `IMpesaClient`, so
 `dotnet test` needs **no** credentials and makes **no** network calls.
+
+## Fiscal receipt (step 6)
+
+The receipt is a **deterministic projection over the completed, persisted sale** — never recomputed
+from the cart, so reprints are byte-identical. VAT is computed and **stored at checkout** (immutable
+fact): Kenyan retail prices are VAT-inclusive, so `Sale.Complete()` backs VAT out of each line
+(standard-rated: `VAT = total × 16/116`; zero-rated/exempt: 0) and stores the per-line figures, a
+per-class VAT summary, and the grand total — inside the existing checkout transaction.
+
+- `Product.TaxClass`: `StandardRated` (16%) / `ZeroRated` / `Exempt` (default standard).
+- `GET /api/v1/sales/{id}/receipt?cols=48` (80mm; `32` = 58mm) returns the `ReceiptModel`, a
+  fixed-width monospace **text** render for ESC/POS, and a simple **HTML** preview for the till.
+- Header from the `Store` config section (LegalName, KraPin, BranchName, address, Phone, VatNumber).
+  Line items carry a configurable tax-code letter (A/B/C — provisional, confirm KRA codes at eTIMS
+  integration); a VAT breakdown + legend and totals (subtotal, total VAT, grand total) follow.
+- **eTIMS** fields (CUIN, signature, QR, transmittedAt) are nullable and null for now; the fiscal
+  block prints `eTIMS: PENDING TRANSMISSION` and is isolated in its own renderer method so wiring the
+  Tax module later only fills the fields. CUIN + QR are minted by eTIMS on transmission.
+
+The till fetches and shows the rendered receipt after each completed sale.
 
 ## Roadmap (anticipated in design choices)
 - Single-store supermarket: S1 multi-lane foundation, S2 weighed goods + scales, S3 cash office,

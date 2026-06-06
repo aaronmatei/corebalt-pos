@@ -5,6 +5,7 @@ using Pos.Api.Endpoints;
 using Pos.Api.Errors;
 using Pos.Application.Abstractions;
 using Pos.Application.Payments;
+using Pos.Application.Receipts;
 using Pos.Application.Sales;
 using Pos.Infrastructure;
 using Pos.Infrastructure.Mpesa;
@@ -26,6 +27,19 @@ builder.Services.AddSingleton(mpesaOptions);
 builder.Services.AddSingleton<IMpesaClient>(_ =>
     new DarajaMpesaClient(new HttpClient { BaseAddress = new Uri(mpesaOptions.BaseUrl) }, mpesaOptions));
 builder.Services.AddScoped<MpesaPaymentService>();
+
+// Receipt header config (config-swappable via the "Store" section) + the renderer service.
+var store = new StoreInfo(
+    LegalName:     builder.Configuration["Store:LegalName"]     ?? "Corebalt Technologies",
+    KraPin:        builder.Configuration["Store:KraPin"]        ?? "A006143399W",
+    BranchName:    builder.Configuration["Store:BranchName"]    ?? "Main Branch",
+    BranchAddress: builder.Configuration["Store:BranchAddress"] ?? "Nairobi, Kenya",
+    Phone:         builder.Configuration["Store:Phone"]         ?? "+254722680861",
+    VatNumber:     builder.Configuration["Store:VatNumber"]     ?? "VAT-PLACEHOLDER",
+    Currency:      builder.Configuration["Store:Currency"]      ?? "KES");
+builder.Services.AddSingleton(store);
+builder.Services.AddSingleton(new ReceiptOptions());
+builder.Services.AddScoped<ReceiptService>();
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentContext, HeaderCurrentContext>();
@@ -58,6 +72,7 @@ app.MapOpenApi();
 var v1 = app.MapGroup("/api/v1").AddEndpointFilter<AuthEndpointFilter>();
 v1.MapCatalog();
 v1.MapSales();
+v1.MapReceipts();
 v1.MapMpesa();
 v1.MapInventory();
 

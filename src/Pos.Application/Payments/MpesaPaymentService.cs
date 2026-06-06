@@ -68,7 +68,7 @@ public sealed class MpesaPaymentService
                 ?? throw new InvalidOperationException($"Product {l.ProductId} not found in this store.");
             if (!product.IsActive) throw new InvalidOperationException($"Product {product.Sku} is inactive.");
             var unitPrice = new Money(product.Price.Amount, product.Price.Currency);
-            sale.AddLine(product.Id, product.Name, l.Quantity, unitPrice);
+            sale.AddLine(product.Id, product.Name, l.Quantity, unitPrice, product.TaxClass, product.UnitOfMeasure);
         }
 
         foreach (var t in cashTenders ?? Array.Empty<CheckoutTender>())

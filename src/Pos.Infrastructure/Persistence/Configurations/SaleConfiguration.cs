@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Pos.Domain.Catalog;
 using Pos.Domain.Sales;
 
 namespace Pos.Infrastructure.Persistence.Configurations;
@@ -40,10 +41,23 @@ internal sealed class SaleConfiguration : IEntityTypeConfiguration<Sale>
             lines.Property(l => l.ProductId).HasColumnName("product_id").IsRequired();
             lines.Property(l => l.Description).HasColumnName("description").HasMaxLength(200).IsRequired();
             lines.Property(l => l.Quantity).HasColumnName("quantity").HasColumnType("numeric(18,3)");
+            lines.Property(l => l.TaxClass).HasColumnName("tax_class").HasConversion<int>();
+            lines.Property(l => l.UnitOfMeasure).HasColumnName("unit_of_measure").HasConversion<int>();
             lines.OwnsOne(l => l.UnitPrice, m =>
             {
                 m.Property(p => p.Amount).HasColumnName("unit_price_amount").HasColumnType("numeric(18,2)");
                 m.Property(p => p.Currency).HasColumnName("unit_price_currency").HasMaxLength(3);
+            });
+            // VAT backed out + stored at completion (immutable).
+            lines.OwnsOne(l => l.VatAmount, m =>
+            {
+                m.Property(p => p.Amount).HasColumnName("vat_amount").HasColumnType("numeric(18,2)");
+                m.Property(p => p.Currency).HasColumnName("vat_currency").HasMaxLength(3);
+            });
+            lines.OwnsOne(l => l.TaxableAmount, m =>
+            {
+                m.Property(p => p.Amount).HasColumnName("taxable_amount").HasColumnType("numeric(18,2)");
+                m.Property(p => p.Currency).HasColumnName("taxable_currency").HasMaxLength(3);
             });
             lines.Ignore(l => l.LineTotal); // computed, not persisted
         });
@@ -67,6 +81,39 @@ internal sealed class SaleConfiguration : IEntityTypeConfiguration<Sale>
         });
         b.Navigation("_tenders").UsePropertyAccessMode(PropertyAccessMode.Field);
 
+        // Per-class VAT summary, frozen at completion (one row per tax class on the sale).
+        b.OwnsMany<SaleVatSummaryLine>("_vatSummary", v =>
+        {
+            v.ToTable("sale_vat_summary");
+            v.WithOwner().HasForeignKey("sale_id");
+            v.Property(x => x.TaxClass).HasColumnName("tax_class").HasConversion<int>();
+            v.HasKey("sale_id", "TaxClass");
+            v.OwnsOne(x => x.TaxableAmount, m =>
+            {
+                m.Property(p => p.Amount).HasColumnName("taxable_amount").HasColumnType("numeric(18,2)");
+                m.Property(p => p.Currency).HasColumnName("taxable_currency").HasMaxLength(3);
+            });
+            v.OwnsOne(x => x.VatAmount, m =>
+            {
+                m.Property(p => p.Amount).HasColumnName("vat_amount").HasColumnType("numeric(18,2)");
+                m.Property(p => p.Currency).HasColumnName("vat_currency").HasMaxLength(3);
+            });
+        });
+        b.Navigation("_vatSummary").UsePropertyAccessMode(PropertyAccessMode.Field);
+
+        // Grand total (VAT-inclusive) frozen at completion.
+        b.OwnsOne(s => s.GrandTotal, m =>
+        {
+            m.Property(p => p.Amount).HasColumnName("grand_total_amount").HasColumnType("numeric(18,2)");
+            m.Property(p => p.Currency).HasColumnName("grand_total_currency").HasMaxLength(3);
+        });
+
+        // eTIMS fiscal fields — nullable, filled later by the Tax module on transmission.
+        b.Property(s => s.EtimsCuin).HasColumnName("etims_cuin").HasMaxLength(128);
+        b.Property(s => s.EtimsSignature).HasColumnName("etims_signature").HasMaxLength(512);
+        b.Property(s => s.EtimsQrUrl).HasColumnName("etims_qr_url").HasMaxLength(512);
+        b.Property(s => s.EtimsTransmittedAtUtc).HasColumnName("etims_transmitted_at_utc").HasColumnType("timestamptz");
+
         // Routes queries on the tenant/store partition.
         b.HasIndex(s => new { s.TenantId, s.StoreId, s.Id }).HasDatabaseName("ix_sales_tenant_store_id");
         b.HasIndex(s => new { s.TenantId, s.StoreId, s.Status }).HasDatabaseName("ix_sales_tenant_store_status");
@@ -75,8 +122,11 @@ internal sealed class SaleConfiguration : IEntityTypeConfiguration<Sale>
         b.Ignore(s => s.Subtotal);
         b.Ignore(s => s.Paid);
         b.Ignore(s => s.BalanceDue);
+        b.Ignore(s => s.IsFullyPaid);
+        b.Ignore(s => s.HasPendingTenders);
         // The public read-only projections share the backing fields above — don't double-map.
         b.Ignore(s => s.Lines);
         b.Ignore(s => s.Tenders);
+        b.Ignore(s => s.VatSummary);
     }
 }

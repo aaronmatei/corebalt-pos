@@ -8,7 +8,8 @@ public sealed record CreateProductRequest(
     decimal PriceAmount,
     string PriceCurrency,
     UnitOfMeasure UnitOfMeasure = UnitOfMeasure.Each,
-    string? Barcode = null);
+    string? Barcode = null,
+    TaxClass TaxClass = TaxClass.StandardRated);
 
 public sealed record RepriceProductRequest(decimal Amount, string Currency);
 
@@ -21,4 +22,5 @@ public sealed record ProductResponse(
     MoneyDto Price,
     UnitOfMeasure UnitOfMeasure,
     bool IsActive,
-    string? Barcode);
+    string? Barcode,
+    TaxClass TaxClass);

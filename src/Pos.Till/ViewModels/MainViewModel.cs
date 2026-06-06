@@ -57,6 +57,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private string _statusMessage = "Starting…";
     [ObservableProperty] private string? _lastSaleSummary;
+    [ObservableProperty] private string? _receiptText;
 
     private CancellationTokenSource? _mpesaCts;
 
@@ -218,6 +219,7 @@ public partial class MainViewModel : ObservableObject
         CashAmount = 0m;
         MpesaAmount = 0m;
         MpesaPhone = "";
+        ReceiptText = null;
         CancelPending();
         StatusMessage = "Sale cleared.";
     }
@@ -247,6 +249,7 @@ public partial class MainViewModel : ObservableObject
                     $"   Total  {sale.Currency} {sale.Total:0.00}\n" +
                     $"   Change {sale.Currency} {sale.ChangeDue:0.00}";
                 StatusMessage = "Cash sale completed.";
+                await ShowReceiptAsync(sale.SaleId);
                 ClearSaleAfterSuccess();
             }
             else
@@ -329,6 +332,7 @@ public partial class MainViewModel : ObservableObject
                         $"   Change  {s.Currency} {s.ChangeDue:0.00}\n" +
                         $"   Receipt {s.Receipt ?? "(pending callback)"}";
                     StatusMessage = "M-Pesa confirmed — sale completed.";
+                    await ShowReceiptAsync(s.SaleId);
                     ClearSaleAfterSuccess();
                     return;
                 case "Failed":
@@ -347,6 +351,13 @@ public partial class MainViewModel : ObservableObject
 
     [RelayCommand(CanExecute = nameof(CanCancelMpesa))]
     private void CancelMpesa() => _mpesaCts?.Cancel();
+
+    /// <summary>Fetch the rendered receipt for a completed sale and show it in the till.</summary>
+    private async Task ShowReceiptAsync(Guid saleId)
+    {
+        var r = await _api.GetReceiptAsync(saleId);
+        ReceiptText = r.Ok ? r.Value!.Text : $"(receipt unavailable: {r.Error})";
+    }
 
     private void ClearSaleAfterSuccess()
     {

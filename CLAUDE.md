@@ -29,7 +29,8 @@ Offline-first: a till/branch must keep selling when the network drops.
 - `src/Pos.Domain` — Sales (Sale/SaleLine/Tender), Inventory (StockMovement), Catalog (Product),
   Payments (MpesaPayment — the M-Pesa reconciliation ledger)
 - `src/Pos.Application` — ports (repositories, IUnitOfWork, IClock, **IMpesaClient**) + use cases
-  `CheckoutService` (cash) and `MpesaPaymentService` (async M-Pesa: initiate/query/callback)
+  `CheckoutService` (cash) and `MpesaPaymentService` (async M-Pesa: initiate/query/callback);
+  `Receipts/` (ReceiptModel projection + fixed-width text + HTML renderers + ReceiptService)
 - `src/Pos.Infrastructure` — PosDbContext, EF configurations, repositories, outbox interceptor,
   **DarajaMpesaClient** (Mpesa/), DI; `Persistence/Migrations` holds the EF migrations + model snapshot
 - `src/Pos.Api` — ASP.NET Core 10 minimal-API store-server host: catalog + checkout + inventory over
@@ -52,8 +53,10 @@ dotnet ef database update --project src/Pos.Infrastructure --startup-project sam
 dotnet run  --project samples/Pos.Persistence.Demo   # save→reload a sale, print the outbox row
 dotnet run  --project src/Pos.Api                    # store-server host on http://localhost:5080; auto-applies migrations in Development
 dotnet run  --project src/Pos.Till                   # Avalonia till (pure API client); talks to :5080
-dotnet test                                          # domain + API integration tests (43)
+dotnet test                                          # domain + API integration tests (49)
 ```
+Receipt header comes from the `Store` config section (LegalName/KraPin/BranchName/BranchAddress/
+Phone/VatNumber/Currency) — config-swappable, defaults to Corebalt Technologies.
 M-Pesa (Daraja) secrets are read from the `Mpesa` config section / user-secrets / `POS_MPESA_*` env
 (see README). Without them, M-Pesa initiate fails gracefully (tender → Failed); cash is unaffected.
 Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Database=pos;Username=postgres;Password=pos`).
@@ -63,8 +66,16 @@ Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Databa
 - **Done:** step 1 (domain core + invariants), step 2 (Catalog, Application, EF Core/Postgres
   persistence + transactional outbox, `InitialCreate` migration), step 3 (`Pos.Api`
   store-server host + `Pos.Api.Tests` integration tests), step 4 (`Pos.Till` Avalonia client), and
-  step 5 (real M-Pesa via Daraja STK push, as an async pending→confirmed flow).
-  All six projects target `net10.0`; `dotnet test` is green at 43 (25 domain + 18 API).
+  step 5 (real M-Pesa via Daraja STK push, as an async pending→confirmed flow), and step 6
+  (fiscal receipt). All six projects target `net10.0`; `dotnet test` is green at 49 (29 domain + 20 API).
+- **VAT + receipt (KRA):** `Product.TaxClass` (StandardRated 16% / ZeroRated / Exempt; prices are
+  VAT-INCLUSIVE). At completion `Sale.Complete()` backs VAT out of each line and STORES it (per-line
+  TaxClass + VatAmount + TaxableAmount, a per-class VAT summary, and the grand total) inside the
+  checkout transaction — immutable facts, never recomputed at print time. `Sale` also has nullable
+  eTIMS fields (CUIN/signature/QR/transmittedAt), all null until the Tax module transmits.
+  `GET /api/v1/sales/{id}/receipt?cols=48|32` projects the persisted sale + the "Store" config section
+  into a `ReceiptModel` and renders deterministic (byte-identical) thermal text + an HTML preview; the
+  fiscal block prints "eTIMS: PENDING TRANSMISSION" until the fields are filled.
 - **M-Pesa (async, NEVER faked as synchronous):** a `Tender` has a `Status` (Pending/Confirmed/Failed)
   + `ProviderReference`; cash is Confirmed on creation; `Paid` counts only Confirmed tenders and
   `Sale.Complete()` refuses while any tender is Pending. STK flow: `POST /api/v1/sales/mpesa/checkout`

@@ -53,7 +53,7 @@ public sealed class CheckoutService
         // makes EF track the same instance under both Product.Price and SaleLine.UnitPrice,
         // which corrupts change tracking (the new line gets staged as Modified, not Added).
         var unitPrice = new Money(product.Price.Amount, product.Price.Currency);
-        sale.AddLine(product.Id, product.Name, quantity, unitPrice);
+        sale.AddLine(product.Id, product.Name, quantity, unitPrice, product.TaxClass, product.UnitOfMeasure);
         await _uow.SaveChangesAsync(ct);
     }
 
@@ -115,7 +115,7 @@ public sealed class CheckoutService
             // Defensive copy of the owned Money — see AddLineAsync for why sharing the instance
             // corrupts change tracking.
             var unitPrice = new Money(product.Price.Amount, product.Price.Currency);
-            sale.AddLine(product.Id, product.Name, l.Quantity, unitPrice);
+            sale.AddLine(product.Id, product.Name, l.Quantity, unitPrice, product.TaxClass, product.UnitOfMeasure);
         }
 
         foreach (var t in tenders ?? Array.Empty<CheckoutTender>())

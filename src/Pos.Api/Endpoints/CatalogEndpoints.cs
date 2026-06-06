@@ -26,7 +26,8 @@ internal static class CatalogEndpoints
                 req.Sku, req.Name,
                 new Money(req.PriceAmount, req.PriceCurrency),
                 req.UnitOfMeasure,
-                req.Barcode);
+                req.Barcode,
+                req.TaxClass);
             await products.AddAsync(product, ct);
             await uow.SaveChangesAsync(ct);
             return Results.Created($"/api/v1/products/{product.Id}", product.ToResponse());
