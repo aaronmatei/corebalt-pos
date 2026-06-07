@@ -429,6 +429,11 @@ mutable running counters).
 - **Print / view:** X/Z print via the ESC/POS pipeline (`POST /api/v1/sessions/{id}/print`) and are
   viewable in the back-office (`/sessions`, `/sessions/{id}`), with a store/day sales summary
   (`/day-summary`, `GET /api/v1/sales-summary`).
+- **Till (Avalonia):** after login the till checks for an open shift and, if none, shows a blocking
+  Open-shift prompt (opening float) — selling is disabled until a shift is open. The header shows a shift
+  indicator; a toolbar runs pay-in/out/drop (Supervisor PIN override), the X report, and Close shift
+  (counted → expected/variance → Z; a large variance prompts a Manager PIN). After close it returns to
+  the Open-shift prompt. The Supervisor/Manager override is a one-off PIN login used only for that call.
 
 ## Roadmap (anticipated in design choices)
 - Single-store supermarket: S1 multi-lane foundation, S2 weighed goods + scales, S3 cash office,

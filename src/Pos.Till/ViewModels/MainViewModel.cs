@@ -134,7 +134,11 @@ public partial class MainViewModel : ObservableObject
     }
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────────────────
-    public async Task InitializeAsync() => await RefreshAsync();
+    public async Task InitializeAsync()
+    {
+        await RefreshAsync();
+        await LoadShiftAsync(); // gate selling on an open shift; prompt to open one if none
+    }
 
     [RelayCommand(CanExecute = nameof(NotBusy))]
     private async Task RefreshAsync()
@@ -238,7 +242,7 @@ public partial class MainViewModel : ObservableObject
     }
 
     // ── Cash checkout (synchronous) ─────────────────────────────────────────────────────────
-    private bool CanComplete() => !IsBusy && !MpesaInProgress && Cart.Count > 0;
+    private bool CanComplete() => !IsBusy && !MpesaInProgress && Cart.Count > 0 && HasOpenShift;
 
     [RelayCommand(CanExecute = nameof(CanComplete))]
     private async Task CompleteSaleAsync()
@@ -274,7 +278,7 @@ public partial class MainViewModel : ObservableObject
 
     // ── M-Pesa checkout (asynchronous STK push → poll) ──────────────────────────────────────
     private bool CanPayWithMpesa() =>
-        !IsBusy && !MpesaInProgress && Cart.Count > 0 && MpesaAmount > 0m && !string.IsNullOrWhiteSpace(MpesaPhone);
+        !IsBusy && !MpesaInProgress && Cart.Count > 0 && MpesaAmount > 0m && !string.IsNullOrWhiteSpace(MpesaPhone) && HasOpenShift;
 
     [RelayCommand(CanExecute = nameof(CanPayWithMpesa))]
     private async Task PayWithMpesaAsync()

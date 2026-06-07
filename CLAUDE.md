@@ -45,7 +45,9 @@ Offline-first: a till/branch must keep selling when the network drops.
 - `src/Pos.Till` — Avalonia (.NET 10, MVVM/CommunityToolkit) desktop till. A **pure HTTP client**
   of `Pos.Api`: it references no domain/application/infrastructure assembly and owns its own wire
   DTOs. PIN login screen → JWT held for the session; till screen (catalogue + scan + cart + tender +
-  checkout); "Lock / switch cashier" returns to login. Shell swaps Login↔Till via a ContentControl
+  checkout) gated behind an **open cash shift** (open-float overlay + drawer/X/close toolbar with
+  Supervisor/Manager PIN overrides — see cash management); "Lock / switch cashier" returns to login.
+  Shell swaps Login↔Till via a ContentControl
 - `samples/Pos.Smoke` — domain-only console (no infrastructure)
 - `samples/Pos.Persistence.Demo` — saves a sale to Postgres, reloads it, prints the outbox
 - `tests/Pos.Domain.Tests` — xUnit invariant tests (UUIDv7, store/tenant scoping, append-only, Money)
@@ -106,7 +108,12 @@ Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Databa
   `POST /api/v1/sessions/{open,current,movements,{id}/report,{id}/close,{id}/print}` + `GET /sales-summary`
   (store/day aggregate). X/Z print via the ESC/POS pipeline (`ReceiptOutputService.PrintShiftReportAsync`,
   reuses `IReceiptPrinter`) and view in back-office (`/sessions`, `/sessions/{id}`, `/day-summary`).
-  **Pending:** the till's open-shift prompt on login (server already blocks selling without one).
+  **Till (Avalonia):** after login the till checks `GET /sessions/current`; with no shift it shows a
+  blocking **Open-shift** overlay (opening float) and selling stays disabled until opened; the header
+  shows a shift indicator. A toolbar runs Pay-in/out / Drop (each via a **Supervisor PIN override** —
+  a one-off `pin-login` used as the bearer for that call, session token untouched), an **X report**, and
+  **Close shift** (counted → Expected/Counted/Variance → Z, a large variance prompts a **Manager PIN**;
+  after close it returns to the Open-shift prompt). `MainViewModel.Shift.cs` + `TillView` overlays.
 - **Thermal printing (per-register, hardware-free to build/test):** `PrinterProfile` per Register
   (`Pos.Domain/Tenancy`): Transport (Null/File/Network), PaperWidth (80mm/576 dots → 48 cols, 58mm/384 →
   32), HasCutter/HasCashDrawer/NativeQrSupported. `EscPosBuilder` (`Pos.Infrastructure/Printing`) turns

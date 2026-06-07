@@ -18,6 +18,15 @@ public interface IPosApiClient
     Task<ApiResult<MpesaInitiateDto>> InitiateMpesaAsync(MpesaCheckoutRequestDto request, CancellationToken ct = default);
     Task<ApiResult<MpesaStatusDto>> GetMpesaStatusAsync(Guid saleId, CancellationToken ct = default);
     Task<ApiResult<ReceiptDto>> GetReceiptAsync(Guid saleId, CancellationToken ct = default);
+
+    // Cash management / shifts. The gated actions accept a one-off bearer override so a Cashier can call
+    // a Supervisor/Manager endpoint by entering that person's PIN, without disturbing the session token.
+    Task<ApiResult<SessionDto>> GetCurrentSessionAsync(Guid registerId, CancellationToken ct = default);
+    Task<ApiResult<SessionDto>> OpenSessionAsync(OpenSessionRequestDto request, CancellationToken ct = default);
+    Task<ApiResult<ShiftReportDto>> GetSessionReportAsync(Guid sessionId, CancellationToken ct = default);
+    Task<ApiResult<bool>> PrintSessionReportAsync(Guid sessionId, CancellationToken ct = default);
+    Task<ApiResult<object>> RecordCashMovementAsync(CashMovementRequestDto request, string? bearerOverride = null, CancellationToken ct = default);
+    Task<ApiResult<ShiftReportDto>> CloseSessionAsync(Guid sessionId, CloseSessionRequestDto request, string? bearerOverride = null, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -73,6 +82,49 @@ public sealed class PosApiClient : IPosApiClient, IDisposable
 
     public Task<ApiResult<ReceiptDto>> GetReceiptAsync(Guid saleId, CancellationToken ct = default) =>
         SendAsync<ReceiptDto>(() => _http.GetAsync($"{ApiBase}/sales/{saleId}/receipt", ct), ct);
+
+    // ── Cash management / shifts ────────────────────────────────────────────────────────────────
+    public Task<ApiResult<SessionDto>> GetCurrentSessionAsync(Guid registerId, CancellationToken ct = default) =>
+        SendAsync<SessionDto>(() => _http.GetAsync($"{ApiBase}/sessions/current?registerId={registerId}", ct), ct);
+
+    public Task<ApiResult<SessionDto>> OpenSessionAsync(OpenSessionRequestDto request, CancellationToken ct = default) =>
+        SendAsync<SessionDto>(() => _http.PostAsJsonAsync($"{ApiBase}/sessions/open", request, Json, ct), ct);
+
+    public Task<ApiResult<ShiftReportDto>> GetSessionReportAsync(Guid sessionId, CancellationToken ct = default) =>
+        SendAsync<ShiftReportDto>(() => _http.GetAsync($"{ApiBase}/sessions/{sessionId}/report", ct), ct);
+
+    public Task<ApiResult<bool>> PrintSessionReportAsync(Guid sessionId, CancellationToken ct = default) =>
+        SendStatusAsync(() => _http.PostAsync($"{ApiBase}/sessions/{sessionId}/print", content: null, ct), ct);
+
+    public Task<ApiResult<object>> RecordCashMovementAsync(CashMovementRequestDto request, string? bearerOverride = null, CancellationToken ct = default) =>
+        SendAsync<object>(() => _http.SendAsync(Build(HttpMethod.Post, $"{ApiBase}/sessions/movements", request, bearerOverride), ct), ct);
+
+    public Task<ApiResult<ShiftReportDto>> CloseSessionAsync(Guid sessionId, CloseSessionRequestDto request, string? bearerOverride = null, CancellationToken ct = default) =>
+        SendAsync<ShiftReportDto>(() => _http.SendAsync(Build(HttpMethod.Post, $"{ApiBase}/sessions/{sessionId}/close", request, bearerOverride), ct), ct);
+
+    /// <summary>Build a request, optionally with a one-off bearer (overrides the session token).</summary>
+    private HttpRequestMessage Build(HttpMethod method, string url, object? body, string? bearerOverride)
+    {
+        var req = new HttpRequestMessage(method, url);
+        if (body is not null) req.Content = JsonContent.Create(body, mediaType: null, Json);
+        if (bearerOverride is not null) req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearerOverride);
+        return req;
+    }
+
+    private async Task<ApiResult<bool>> SendStatusAsync(Func<Task<HttpResponseMessage>> send, CancellationToken ct)
+    {
+        try
+        {
+            using var resp = await send();
+            return resp.IsSuccessStatusCode
+                ? ApiResult<bool>.Success(true)
+                : ApiResult<bool>.Failure((int)resp.StatusCode, await ReadProblemAsync(resp, ct));
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            return ApiResult<bool>.Failure(0, $"Cannot reach the store server at {_baseUrl}. ({ex.Message})");
+        }
+    }
 
     private async Task<ApiResult<T>> SendAsync<T>(Func<Task<HttpResponseMessage>> send, CancellationToken ct)
     {

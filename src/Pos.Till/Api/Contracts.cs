@@ -69,6 +69,23 @@ public sealed record SaleDto(
     MoneyDto BalanceDue,
     DateTimeOffset? CompletedAtUtc);
 
+// ── Cash management / shifts ──────────────────────────────────────────────────────────────────
+public sealed record OpenSessionRequestDto(Guid RegisterId, decimal OpeningFloat);
+public sealed record CashMovementRequestDto(Guid RegisterId, string Type, decimal Amount, string? Reason);
+public sealed record CloseSessionRequestDto(decimal CountedCash, bool Acknowledged);
+
+public sealed record SessionDto(
+    Guid Id, Guid RegisterId, string RegisterLabel, string Status,
+    string OpenedBy, string OpenedAtEat, decimal OpeningFloat,
+    string? ClosedBy, string? ClosedAtEat,
+    decimal? CountedCash, decimal? ExpectedCash, decimal? Variance, string Currency);
+
+// Only the fields the till needs off the report projection (extra JSON is ignored on deserialize).
+public sealed record ReportCashDto(decimal OpeningFloat, decimal CashSales, decimal CashRefunds,
+    decimal PayIns, decimal PayOuts, decimal Drops, decimal Expected, decimal? Counted, decimal? Variance);
+public sealed record ReportBodyDto(string Kind, ReportCashDto Cash);
+public sealed record ShiftReportDto(ReportBodyDto Report, string Text);
+
 /// <summary>RFC 7807 ProblemDetails — what the API returns for 400/401/409.</summary>
 public sealed record ProblemDto(string? Title, string? Detail, int? Status);
 
