@@ -9,6 +9,7 @@ namespace Pos.Till.Api;
 public interface IPosApiClient
 {
     Task<ApiResult<TokenDto>> PinLoginAsync(string staffCode, string pin, CancellationToken ct = default);
+    Task<ApiResult<FingerprintLoginDto>> FingerprintLoginAsync(string probeBase64, CancellationToken ct = default);
     void SetAccessToken(string token);
     void ClearAccessToken();
     Task<ApiResult<IReadOnlyList<ProductDto>>> ListProductsAsync(CancellationToken ct = default);
@@ -56,6 +57,10 @@ public sealed class PosApiClient : IPosApiClient, IDisposable
     public Task<ApiResult<TokenDto>> PinLoginAsync(string staffCode, string pin, CancellationToken ct = default) =>
         SendAsync<TokenDto>(() => _http.PostAsJsonAsync($"{ApiBase}/auth/pin-login",
             new { staffCode, pin }, Json, ct), ct);
+
+    public Task<ApiResult<FingerprintLoginDto>> FingerprintLoginAsync(string probeBase64, CancellationToken ct = default) =>
+        SendAsync<FingerprintLoginDto>(() => _http.PostAsJsonAsync($"{ApiBase}/auth/fingerprint-login",
+            new { probe = probeBase64 }, Json, ct), ct);
 
     /// <summary>Hold the session token; sent as the bearer on every subsequent call.</summary>
     public void SetAccessToken(string token) =>

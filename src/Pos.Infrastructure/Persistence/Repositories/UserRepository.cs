@@ -32,4 +32,21 @@ internal sealed class UserRepository : IUserRepository
             .Where(u => u.TenantId == tenantId && u.StoreId == storeId)
             .OrderBy(u => u.Name)
             .ToListAsync(ct);
+
+    public Task<User?> GetByIdWithFingerprintsAsync(Guid tenantId, Guid storeId, Guid userId, CancellationToken ct = default) =>
+        _db.Users
+            .Include(u => u.Fingerprints)
+            .FirstOrDefaultAsync(u => u.TenantId == tenantId && u.StoreId == storeId && u.Id == userId, ct);
+
+    public async Task<IReadOnlyList<User>> ListActiveWithFingerprintsAsync(Guid tenantId, Guid storeId, CancellationToken ct = default) =>
+        await _db.Users
+            .Include(u => u.Fingerprints)
+            .Where(u => u.TenantId == tenantId && u.StoreId == storeId && u.IsActive && u.Fingerprints.Any())
+            .ToListAsync(ct);
+
+    public async Task AddFingerprintAsync(FingerprintCredential credential, CancellationToken ct = default) =>
+        await _db.FingerprintCredentials.AddAsync(credential, ct);
+
+    public void RemoveFingerprint(FingerprintCredential credential) =>
+        _db.FingerprintCredentials.Remove(credential);
 }

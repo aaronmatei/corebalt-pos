@@ -7,6 +7,9 @@ namespace Pos.Till.Api;
 
 public sealed record TokenDto(string AccessToken, DateTimeOffset ExpiresAtUtc, string TokenType);
 
+/// <summary>Fingerprint sign-in result: the session token + the resolved cashier label for the header.</summary>
+public sealed record FingerprintLoginDto(string AccessToken, DateTimeOffset ExpiresAtUtc, string StaffCode, string Name, string TokenType);
+
 public enum UnitOfMeasure { Each = 0, Kg = 1 }
 
 public enum TenderType { Cash = 0, Mpesa = 1, Card = 2, AirtelMoney = 3 }

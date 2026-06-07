@@ -23,6 +23,12 @@ public sealed class User : AggregateRoot, ITenantScoped, IStoreScoped
     public bool MustChangePassword { get; private set; }
     public DateTimeOffset CreatedAtUtc { get; private set; }
 
+    // Enrolled fingerprints (OPTIONAL fast sign-in; PIN/password remain the fallback). Templates only,
+    // encrypted at rest. Exposed read-only; mutated via Enroll/RemoveFingerprint so consent is enforced.
+    private readonly List<FingerprintCredential> _fingerprints = new();
+    public IReadOnlyCollection<FingerprintCredential> Fingerprints => _fingerprints.AsReadOnly();
+    public bool HasFingerprints => _fingerprints.Count > 0;
+
     private User() { } // EF
 
     public static User Create(Guid tenantId, Guid storeId, string name, string username, string staffCode, UserRole role)
@@ -69,4 +75,27 @@ public sealed class User : AggregateRoot, ITenantScoped, IStoreScoped
 
     public void Deactivate() => IsActive = false;
     public void Reactivate() => IsActive = true;
+
+    /// <summary>
+    /// Enrol a fingerprint TEMPLATE (the reader already discarded the raw image). REFUSES without explicit
+    /// consent — enrolment is a supervised, consented act. Records who enrolled it and when.
+    /// </summary>
+    public FingerprintCredential EnrollFingerprint(byte[] template, string? fingerLabel,
+        Guid enrolledByUserId, bool consentGiven, DateTimeOffset now)
+    {
+        if (!consentGiven)
+            throw new InvalidOperationException("Explicit consent is required to enrol a fingerprint.");
+        var credential = FingerprintCredential.Create(Id, template, fingerLabel, enrolledByUserId, now);
+        _fingerprints.Add(credential);
+        return credential;
+    }
+
+    /// <summary>Remove an enrolled fingerprint (e.g. a cashier leaves, or re-enrols). Returns false if absent.</summary>
+    public bool RemoveFingerprint(Guid fingerprintId)
+    {
+        var credential = _fingerprints.FirstOrDefault(f => f.Id == fingerprintId);
+        if (credential is null) return false;
+        _fingerprints.Remove(credential);
+        return true;
+    }
 }

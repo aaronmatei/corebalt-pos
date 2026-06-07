@@ -190,6 +190,11 @@ var storeServer = new StoreServerOptions
 };
 builder.Services.AddSingleton(storeServer);
 builder.Services.AddScoped<AuthService>();
+builder.Services.AddScoped<FingerprintService>();
+
+// Fingerprint auth is OPTIONAL; bind its config (the reader SDK is selected once hardware is chosen).
+builder.Services.AddSingleton(builder.Configuration.GetSection("Fingerprint").Get<Pos.Infrastructure.Identity.FingerprintOptions>()
+    ?? new Pos.Infrastructure.Identity.FingerprintOptions());
 
 JwtSecurityTokenHandler.DefaultMapInboundClaims = false; // keep raw claim names ("sub", "role", ...)
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme) // default = JWT (API + till)

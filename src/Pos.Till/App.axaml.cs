@@ -26,7 +26,9 @@ public partial class App : Application
 
             var options = config.GetSection("Till").Get<TillOptions>() ?? new TillOptions();
             var api = new PosApiClient(options);
-            var shell = new ShellViewModel(api, options); // starts on the PIN login screen
+            // Fingerprint reader seam — the dev stub today; the real reader SDK drops in here when chosen.
+            var scanner = new StubFingerprintScanner();
+            var shell = new ShellViewModel(api, scanner, options); // starts on the sign-in screen
 
             desktop.MainWindow = new MainWindow { DataContext = shell };
             desktop.Exit += (_, _) => api.Dispose();

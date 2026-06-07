@@ -27,6 +27,18 @@ internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
         // Usernames are unique per tenant.
         b.HasIndex(u => new { u.TenantId, u.Username }).IsUnique().HasDatabaseName("ux_users_tenant_username");
 
+        // Enrolled fingerprints are part of the User aggregate but mapped as a SEPARATE entity (not owned),
+        // so the repository can explicitly Add/Remove a credential on an EXISTING user — owned children added
+        // to an already-persisted parent are mis-tracked as Modified. Cascade-deleted with the user. Mapped
+        // via the private backing field; the Template column is encrypted (converter in OnModelCreating).
+        b.HasMany(u => u.Fingerprints)
+            .WithOne()
+            .HasForeignKey(f => f.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+        b.Navigation(u => u.Fingerprints)
+            .HasField("_fingerprints")
+            .UsePropertyAccessMode(PropertyAccessMode.Field);
+
         b.Ignore(u => u.DomainEvents);
     }
 }

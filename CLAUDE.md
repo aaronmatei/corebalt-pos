@@ -93,7 +93,24 @@ Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Databa
   (deployment/ops app-side foundation: Windows Service host + self-contained publish + safe auto-migration),
   Inno Setup installers (store server with portable Postgres + till), and backups + restore (scheduled
   pg_dump, verify, off-machine copy, retention, guarded restore).
-  All six projects target `net10.0`; `dotnet test` is green at 124 (29 domain + 95 API).
+  All six projects target `net10.0`; `dotnet test` is green at 128 (29 domain + 99 API).
+- **Fingerprint sign-in (OPTIONAL; PIN stays the fallback) — SEAM, stub reader for dev:** the reader SDK
+  plugs in behind `IFingerprintAuthenticator` (`Pos.Application/Identity`: `IsEnabled`, `ExtractTemplate`,
+  `Identify(probe, candidates)->UserId`); `StubFingerprintAuthenticator` (byte-exact match) backs dev/test,
+  the real SDK (DigitalPersona/HID U.are.U, ZKTeco, SecuGen, Futronic) drops in later. NOT Windows Hello
+  (that authenticates the Windows account, not the many app cashiers sharing a till). **Storage:** a
+  `FingerprintCredential` is a child of the `User` aggregate (`EnrollFingerprint` requires consent; mapped
+  as a SEPARATE entity + explicit `DbSet.Add` — owned children added to an EXISTING aggregate mis-track as
+  Modified) storing ONLY the SDK template (base64), **encrypted at rest** by the same Data-Protection key
+  ring as the M-Pesa/eTIMS secrets — never the raw image, never the cloud. **Sign-in:** capture happens at
+  the till's reader; the probe is POSTed to `POST /api/v1/auth/fingerprint-login` (anonymous), the server
+  IDENTIFIES it LOCALLY against the store's enrolled templates and, on a match to an active user, issues the
+  SAME JWT as PIN (via `FingerprintService` + the shared `ITokenIssuer`; scoped to `StoreServerOptions`).
+  **Enrolment** (Manager, supervised, consent recorded): `POST/GET/DELETE /api/v1/users/{id}/fingerprints`
+  + the back-office **Cashiers** page (per-cashier enrol with a consent checkbox + remove). **Till:** the
+  sign-in screen offers "🔒 Scan fingerprint" beside StaffCode+PIN (`IFingerprintScanner` + dev stub keyed
+  off the staff-code box); it doubles as the fast mid-shift "switch cashier" path (Lock → sign-in). Optional
+  via `Fingerprint:Enabled` config (stub defaults on). Migration `AddFingerprintCredentials`.
 - **Reorder-level / low-stock alerts (S5 groundwork):** `Product` gains nullable `ReorderLevel` +
   `ReorderQuantity` (decimals, weighed-goods friendly; null level = not tracked) + a `LowStockNotified`
   bookkeeping flag (notification dedup ONLY — "low" is always DERIVED, never stored). Product-level for the

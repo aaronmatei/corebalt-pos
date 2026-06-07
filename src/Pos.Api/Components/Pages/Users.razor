@@ -1,6 +1,8 @@
 @page "/users"
 @attribute [Authorize(Policy = "BackOfficeManager")]
+@using System.Text
 @inject AuthService Auth
+@inject Pos.Application.Identity.FingerprintService Fingerprints
 
 <h1>Cashiers &amp; users</h1>
 
@@ -28,7 +30,7 @@
 </div>
 
 <table>
-    <thead><tr><th>Name</th><th>Staff code</th><th>Role</th><th>Status</th><th>Reset PIN</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Staff code</th><th>Role</th><th>Status</th><th>Fingerprints</th><th>Reset PIN</th><th></th></tr></thead>
     <tbody>
         @foreach (var u in _users)
         {
@@ -37,6 +39,32 @@
                 <td>@u.StaffCode</td>
                 <td>@u.Role</td>
                 <td>@(u.IsActive ? "Active" : "Inactive")</td>
+                <td>
+                    @{ var prints = _fingerprints.TryGetValue(u.Id, out var fps) ? fps : []; }
+                    @foreach (var f in prints)
+                    {
+                        <div style="display:flex;gap:6px;align-items:center;margin-bottom:3px">
+                            <span title="@($"Enrolled {f.EnrolledAtUtc:yyyy-MM-dd}, consent recorded")">🔒 @(f.FingerLabel ?? "Finger")</span>
+                            <form method="post" action="@($"/backoffice/users/{u.Id}/fingerprints/{f.Id}/remove")" style="display:inline">
+                                <Csrf /><button type="submit" class="btn ghost" style="padding:2px 8px">✕</button>
+                            </form>
+                        </div>
+                    }
+                    @if (_fpEnabled)
+                    {
+                        <form method="post" action="@($"/backoffice/users/{u.Id}/enroll-fingerprint")" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                            <Csrf />
+                            @* DEV capture: the stub template is base64("STUB:"+staffCode). A real reader SDK
+                               (via JS) replaces this hidden value with a live capture before submit. *@
+                            <input type="hidden" name="template" value="@DevTemplate(u.StaffCode)" />
+                            <input name="fingerLabel" placeholder="Finger (e.g. R thumb)" style="max-width:130px" />
+                            <label style="display:flex;align-items:center;gap:4px;margin:0;color:var(--ink)">
+                                <input type="checkbox" name="consent" value="true" style="width:auto" required /> consent
+                            </label>
+                            <button type="submit" class="ghost">Enrol</button>
+                        </form>
+                    }
+                </td>
                 <td>
                     <form method="post" action="@($"/backoffice/users/{u.Id}/reset-pin")" style="display:flex;gap:6px">
                         <Csrf />
@@ -69,6 +97,17 @@
     [SupplyParameterFromQuery] public string? Error { get; set; }
 
     private IReadOnlyList<User> _users = [];
+    private Dictionary<Guid, IReadOnlyList<Pos.Application.Identity.FingerprintInfo>> _fingerprints = new();
+    private bool _fpEnabled;
 
-    protected override async Task OnInitializedAsync() => _users = await Auth.ListUsersAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        _users = await Auth.ListUsersAsync();
+        _fpEnabled = Fingerprints.IsEnabled;
+        foreach (var u in _users)
+            _fingerprints[u.Id] = await Fingerprints.ListAsync(u.Id);
+    }
+
+    // Dev stub: a deterministic "captured" template from the staff code. Matches the till's dev scanner.
+    private static string DevTemplate(string staffCode) => Convert.ToBase64String(Encoding.UTF8.GetBytes("STUB:" + staffCode));
 }

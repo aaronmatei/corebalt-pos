@@ -70,6 +70,13 @@ public static class DependencyInjection
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddSingleton<IPasswordHasher, AspNetPasswordHasher>();
 
+        // Fingerprint auth (OPTIONAL — PIN stays the fallback): a stub reader SDK for dev/test; the real
+        // reader (DigitalPersona/ZKTeco/SecuGen/Futronic) drops in behind IFingerprintAuthenticator. The
+        // host may rebind FingerprintOptions from config. FingerprintService itself is wired in the host
+        // (it needs the JWT issuer + StoreServer identity), like AuthService.
+        services.AddSingleton(new FingerprintOptions());
+        services.AddSingleton<IFingerprintAuthenticator, StubFingerprintAuthenticator>();
+
         // Tenancy: merchant profile + per-tenant integration settings (encrypted) + entitlements + setup.
         // Integration secrets are encrypted at rest with ASP.NET Core Data Protection — the install-level
         // key ring persisted to disk, isolated by application name. The host passes the per-install path

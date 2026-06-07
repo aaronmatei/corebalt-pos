@@ -10,13 +10,15 @@ namespace Pos.Till.ViewModels;
 public partial class ShellViewModel : ObservableObject
 {
     private readonly IPosApiClient _api;
+    private readonly IFingerprintScanner _scanner;
     private readonly TillOptions _options;
 
     [ObservableProperty] private ObservableObject _current = default!;
 
-    public ShellViewModel(IPosApiClient api, TillOptions options)
+    public ShellViewModel(IPosApiClient api, IFingerprintScanner scanner, TillOptions options)
     {
         _api = api;
+        _scanner = scanner;
         _options = options;
         ShowLogin();
     }
@@ -24,7 +26,7 @@ public partial class ShellViewModel : ObservableObject
     private void ShowLogin()
     {
         _api.ClearAccessToken();
-        var login = new LoginViewModel(_api);
+        var login = new LoginViewModel(_api, _scanner);
         login.LoggedIn += OnLoggedIn;
         Current = login;
     }

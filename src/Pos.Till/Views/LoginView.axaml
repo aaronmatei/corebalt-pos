@@ -23,6 +23,15 @@
         <Button Content="Sign in" Classes="accent" HorizontalAlignment="Stretch"
                 HorizontalContentAlignment="Center" Command="{Binding LoginCommand}"/>
 
+        <Grid ColumnDefinitions="*,Auto,*" IsVisible="{Binding FingerprintAvailable}" Margin="0,2">
+          <Border Grid.Column="0" Height="1" Background="#CBD2D9" VerticalAlignment="Center"/>
+          <TextBlock Grid.Column="1" Text="or" Foreground="#9AA5B1" Margin="10,0"/>
+          <Border Grid.Column="2" Height="1" Background="#CBD2D9" VerticalAlignment="Center"/>
+        </Grid>
+
+        <Button Content="🔒 Scan fingerprint" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                IsVisible="{Binding FingerprintAvailable}" Command="{Binding ScanFingerprintCommand}"/>
+
         <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsBusy}" Height="4"/>
 
         <TextBlock Text="{Binding Error}" Foreground="#C0392B" TextWrapping="Wrap"

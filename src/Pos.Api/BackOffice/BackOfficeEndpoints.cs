@@ -196,6 +196,26 @@ internal static class BackOfficeEndpoints
             catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return Back("/users", ex); }
         }).RequireAuthorization("BackOfficeManager");
 
+        // Enrol a cashier's fingerprint under supervision (consent required). The template is captured at
+        // the reader; in dev it's the base64 stub the page supplies. No-consent → InvalidOperationException → error.
+        g.MapPost("/users/{id:guid}/enroll-fingerprint", async (Guid id, FingerprintService fp,
+            [FromForm] string template, [FromForm] string? fingerLabel, [FromForm] string? consent, CancellationToken ct) =>
+        {
+            try
+            {
+                if (!TryBase64(template, out var bytes)) return Back("/users", new ArgumentException("Invalid capture."));
+                await fp.EnrollAsync(id, bytes, fingerLabel, consent == "true" || consent == "on", ct);
+                return Results.Redirect("/users");
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return Back("/users", ex); }
+        }).RequireAuthorization("BackOfficeManager");
+
+        g.MapPost("/users/{id:guid}/fingerprints/{fpId:guid}/remove", async (Guid id, Guid fpId, FingerprintService fp, CancellationToken ct) =>
+        {
+            await fp.RemoveAsync(id, fpId, ct);
+            return Results.Redirect("/users");
+        }).RequireAuthorization("BackOfficeManager");
+
         g.MapPost("/users/{id:guid}/reset-pin", async (Guid id, AuthService auth, [FromForm] string pin, CancellationToken ct) =>
         {
             try { await auth.ResetPinAsync(id, pin, ct); return Results.Redirect("/users"); }
@@ -287,6 +307,14 @@ internal static class BackOfficeEndpoints
 
     /// <summary>Form selects post "" for "no category"; turn a blank/invalid value into null.</summary>
     private static Guid? ParseGuid(string? value) => Guid.TryParse(value, out var g) && g != Guid.Empty ? g : null;
+
+    private static bool TryBase64(string? value, out byte[] bytes)
+    {
+        bytes = [];
+        if (string.IsNullOrWhiteSpace(value)) return false;
+        try { bytes = Convert.FromBase64String(value); return bytes.Length > 0; }
+        catch (FormatException) { return false; }
+    }
 
     private static ClaimsPrincipal BuildPrincipal(User u)
     {

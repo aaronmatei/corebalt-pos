@@ -26,6 +26,7 @@ public sealed class PosDbContext : DbContext, IUnitOfWork
     public DbSet<MpesaPayment> MpesaPayments => Set<MpesaPayment>();
     public DbSet<CreditNote> CreditNotes => Set<CreditNote>();
     public DbSet<User> Users => Set<User>();
+    public DbSet<FingerprintCredential> FingerprintCredentials => Set<FingerprintCredential>();
     public DbSet<MerchantProfile> MerchantProfiles => Set<MerchantProfile>();
     public DbSet<MpesaSettings> MpesaSettings => Set<MpesaSettings>();
     public DbSet<EtimsSettings> EtimsSettings => Set<EtimsSettings>();
@@ -46,6 +47,9 @@ public sealed class PosDbContext : DbContext, IUnitOfWork
         modelBuilder.Entity<MpesaSettings>().Property(s => s.ConsumerSecret).HasConversion(secret);
         modelBuilder.Entity<MpesaSettings>().Property(s => s.Passkey).HasConversion(secret);
         modelBuilder.Entity<EtimsSettings>().Property(s => s.CmcKey).HasConversion(secret);
+        // Biometric templates are encrypted at rest, same install-level key ring as the integration
+        // secrets (the secret protector lives here, not in the IEntityTypeConfiguration).
+        modelBuilder.Entity<FingerprintCredential>().Property(f => f.Template).HasConversion(secret);
     }
 
     public async Task<T> ExecuteInTransactionAsync<T>(Func<CancellationToken, Task<T>> work, CancellationToken ct = default)
