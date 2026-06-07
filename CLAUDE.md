@@ -93,7 +93,7 @@ Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Databa
   (deployment/ops app-side foundation: Windows Service host + self-contained publish + safe auto-migration),
   Inno Setup installers (store server with portable Postgres + till), and backups + restore (scheduled
   pg_dump, verify, off-machine copy, retention, guarded restore).
-  All six projects target `net10.0`; `dotnet test` is green at 128 (29 domain + 99 API).
+  All six projects target `net10.0`; `dotnet test` is green at 131 (29 domain + 102 API).
 - **Fingerprint sign-in (OPTIONAL; PIN stays the fallback) — SEAM, stub reader for dev:** the reader SDK
   plugs in behind `IFingerprintAuthenticator` (`Pos.Application/Identity`: `IsEnabled`, `ExtractTemplate`,
   `Identify(probe, candidates)->UserId`); `StubFingerprintAuthenticator` (byte-exact match) backs dev/test,

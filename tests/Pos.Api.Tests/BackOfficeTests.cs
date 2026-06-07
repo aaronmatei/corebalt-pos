@@ -114,6 +114,80 @@ public sealed class BackOfficeTests(PosApiFixture fx)
         onHand.Should().Be(7m);
     }
 
+    [Fact]
+    public async Task Editing_a_product_with_blank_reorder_fields_saves_null_and_persists_the_category_change()
+    {
+        var (user, _) = await SeedUserAsync(UserRole.Manager);
+        var productId = await SeedProductAsync();
+        var categoryId = await SeedCategoryAsync($"Cat-{Guid.NewGuid():N}"[..10]);
+        var client = Client();
+        await LoginAsync(client, user, Password);
+
+        // The reported bug: blank number inputs post "" → used to 400 on the decimal? bind. Now they map
+        // to null, and an unrelated change (the category) still persists.
+        var resp = await PostFormAsync(client, $"/products/{productId}", $"/backoffice/products/{productId}", new()
+        {
+            ["name"] = "Edited Name", ["unit"] = "Each", ["taxClass"] = "StandardRated",
+            ["isActive"] = "true", ["categoryId"] = categoryId.ToString(),
+            ["reorderLevel"] = "", ["reorderQuantity"] = "",
+        });
+        resp.StatusCode.Should().Be(HttpStatusCode.Found);
+        resp.Headers.Location!.OriginalString.Should().Be("/products");
+
+        var p = await GetProductAsync(productId);
+        p!.ReorderLevel.Should().BeNull();
+        p.ReorderQuantity.Should().BeNull();
+        p.CategoryId.Should().Be(categoryId);
+        p.Name.Should().Be("Edited Name");
+    }
+
+    [Fact]
+    public async Task Reorder_level_round_trips_set_then_cleared_to_null()
+    {
+        var (user, _) = await SeedUserAsync(UserRole.Manager);
+        var productId = await SeedProductAsync();
+        var client = Client();
+        await LoginAsync(client, user, Password);
+
+        (await EditReorderAsync(client, productId, level: "5", qty: "20")).StatusCode.Should().Be(HttpStatusCode.Found);
+        var set = await GetProductAsync(productId);
+        set!.ReorderLevel.Should().Be(5m);
+        set.ReorderQuantity.Should().Be(20m);
+
+        (await EditReorderAsync(client, productId, level: "", qty: "")).StatusCode.Should().Be(HttpStatusCode.Found);
+        var cleared = await GetProductAsync(productId);
+        cleared!.ReorderLevel.Should().BeNull();
+        cleared.ReorderQuantity.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_bad_reorder_value_returns_a_clean_validation_error_not_a_crash()
+    {
+        var (user, _) = await SeedUserAsync(UserRole.Manager);
+        var productId = await SeedProductAsync();
+        var client = Client();
+        await LoginAsync(client, user, Password);
+
+        // Non-numeric → a clean redirect with ?error= (302), never an unhandled 400/500. Product unchanged.
+        var bad = await EditReorderAsync(client, productId, level: "abc", qty: "");
+        bad.StatusCode.Should().Be(HttpStatusCode.Found);
+        bad.Headers.Location!.OriginalString.Should().StartWith($"/products/{productId}?error=");
+        (await GetProductAsync(productId))!.ReorderLevel.Should().BeNull();
+
+        // Negative → same clean handling.
+        var neg = await EditReorderAsync(client, productId, level: "-3", qty: "");
+        neg.StatusCode.Should().Be(HttpStatusCode.Found);
+        neg.Headers.Location!.OriginalString.Should().Contain("error=");
+        (await GetProductAsync(productId))!.ReorderLevel.Should().BeNull();
+    }
+
+    private Task<HttpResponseMessage> EditReorderAsync(HttpClient client, Guid productId, string level, string qty) =>
+        PostFormAsync(client, $"/products/{productId}", $"/backoffice/products/{productId}", new()
+        {
+            ["name"] = "P", ["unit"] = "Each", ["taxClass"] = "StandardRated", ["isActive"] = "true",
+            ["reorderLevel"] = level, ["reorderQuantity"] = qty,
+        });
+
     // ── helpers ──
     private static HttpClient ClientFrom(PosApiFixture fx) =>
         fx.Factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false, HandleCookies = true });
@@ -172,5 +246,23 @@ public sealed class BackOfficeTests(PosApiFixture fx)
         await products.AddAsync(p);
         await uow.SaveChangesAsync();
         return p.Id;
+    }
+
+    private async Task<Pos.Domain.Catalog.Product?> GetProductAsync(Guid id)
+    {
+        using var scope = fx.Factory.Services.CreateScope();
+        var products = scope.ServiceProvider.GetRequiredService<Pos.Application.Catalog.IProductRepository>();
+        return await products.GetAsync(StoreTenant, StoreStore, id);
+    }
+
+    private async Task<Guid> SeedCategoryAsync(string name)
+    {
+        using var scope = fx.Factory.Services.CreateScope();
+        var categories = scope.ServiceProvider.GetRequiredService<Pos.Application.Catalog.ICategoryRepository>();
+        var uow = scope.ServiceProvider.GetRequiredService<Pos.Application.Abstractions.IUnitOfWork>();
+        var c = Pos.Domain.Catalog.Category.Create(StoreTenant, name);
+        await categories.AddAsync(c);
+        await uow.SaveChangesAsync();
+        return c.Id;
     }
 }

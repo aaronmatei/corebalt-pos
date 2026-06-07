@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -97,13 +98,13 @@ internal static class BackOfficeEndpoints
         // ── Products ──
         g.MapPost("/products", async (ProductService svc, ICurrentContext ctx, IMerchantProfileRepository merchants,
             [FromForm] string sku, [FromForm] string name, [FromForm] string? barcode,
-            [FromForm] string unit, [FromForm] string taxClass, [FromForm] decimal priceAmount,
+            [FromForm] string unit, [FromForm] string taxClass, [FromForm] string? priceAmount,
             [FromForm] string? categoryId, CancellationToken ct) =>
         {
             try
             {
                 var currency = (await merchants.GetAsync(ctx.TenantId, ct))?.Currency ?? "KES";
-                await svc.CreateAsync(sku, name, new Money(priceAmount, currency),
+                await svc.CreateAsync(sku, name, new Money(RequiredDecimal(priceAmount, "Price"), currency),
                     Parse<UnitOfMeasure>(unit), barcode, Parse<TaxClass>(taxClass), ParseGuid(categoryId), ct);
                 return Results.Redirect("/products");
             }
@@ -113,12 +114,14 @@ internal static class BackOfficeEndpoints
         g.MapPost("/products/{id:guid}", async (Guid id, ProductService svc,
             [FromForm] string name, [FromForm] string? barcode, [FromForm] string unit,
             [FromForm] string taxClass, [FromForm] string? isActive, [FromForm] string? categoryId,
-            [FromForm] decimal? reorderLevel, [FromForm] decimal? reorderQuantity, CancellationToken ct) =>
+            [FromForm] string? reorderLevel, [FromForm] string? reorderQuantity, CancellationToken ct) =>
         {
             try
             {
+                // OPTIONAL: a blank reorder field clears the level (→ null), never a 400.
                 await svc.UpdateAsync(id, name, barcode, Parse<UnitOfMeasure>(unit), Parse<TaxClass>(taxClass),
-                    isActive == "true", ParseGuid(categoryId), reorderLevel, reorderQuantity, ct);
+                    isActive == "true", ParseGuid(categoryId),
+                    OptionalDecimal(reorderLevel, "Reorder level"), OptionalDecimal(reorderQuantity, "Suggested order qty"), ct);
                 return Results.Redirect("/products");
             }
             catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return Back($"/products/{id}", ex); }
@@ -126,30 +129,30 @@ internal static class BackOfficeEndpoints
 
         // ── Categories ──
         g.MapPost("/categories", async (CategoryService svc,
-            [FromForm] string name, [FromForm] int? displayOrder, CancellationToken ct) =>
+            [FromForm] string name, [FromForm] string? displayOrder, CancellationToken ct) =>
         {
-            try { await svc.CreateAsync(name, parentId: null, displayOrder ?? 0, ct); return Results.Redirect("/categories"); }
+            try { await svc.CreateAsync(name, parentId: null, OptionalInt(displayOrder, "Display order"), ct); return Results.Redirect("/categories"); }
             catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return Back("/categories", ex); }
         }).RequireAuthorization("BackOfficeManager");
 
         g.MapPost("/categories/{id:guid}", async (Guid id, CategoryService svc,
-            [FromForm] string name, [FromForm] int? displayOrder, [FromForm] string? isActive, CancellationToken ct) =>
+            [FromForm] string name, [FromForm] string? displayOrder, [FromForm] string? isActive, CancellationToken ct) =>
         {
             try
             {
-                await svc.UpdateAsync(id, name, parentId: null, displayOrder ?? 0, isActive == "true", ct);
+                await svc.UpdateAsync(id, name, parentId: null, OptionalInt(displayOrder, "Display order"), isActive == "true", ct);
                 return Results.Redirect("/categories");
             }
             catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return Back("/categories", ex); }
         }).RequireAuthorization("BackOfficeManager");
 
         g.MapPost("/products/{id:guid}/price", async (Guid id, ProductService svc, ICurrentContext ctx,
-            IMerchantProfileRepository merchants, [FromForm] decimal amount, CancellationToken ct) =>
+            IMerchantProfileRepository merchants, [FromForm] string? amount, CancellationToken ct) =>
         {
             try
             {
                 var currency = (await merchants.GetAsync(ctx.TenantId, ct))?.Currency ?? "KES";
-                await svc.RepriceAsync(id, new Money(amount, currency), ct); return Results.Redirect($"/products/{id}");
+                await svc.RepriceAsync(id, new Money(RequiredDecimal(amount, "New price"), currency), ct); return Results.Redirect($"/products/{id}");
             }
             catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return Back($"/products/{id}", ex); }
         }).RequireAuthorization("BackOfficeManager");
@@ -169,16 +172,17 @@ internal static class BackOfficeEndpoints
 
         // ── Stock ──
         g.MapPost("/stock/receive", async (StockService svc,
-            [FromForm] Guid productId, [FromForm] decimal quantity, [FromForm] string reason, [FromForm] string? reference, CancellationToken ct) =>
+            [FromForm] Guid productId, [FromForm] string? quantity, [FromForm] string reason, [FromForm] string? reference, CancellationToken ct) =>
         {
-            try { await svc.ReceiveAsync(productId, quantity, Parse<StockMovementReason>(reason), reference, ct); return Results.Redirect("/stock"); }
+            try { await svc.ReceiveAsync(productId, RequiredDecimal(quantity, "Quantity"), Parse<StockMovementReason>(reason), reference, ct); return Results.Redirect("/stock"); }
             catch (ArgumentException ex) { return Back("/stock", ex); }
         }).RequireAuthorization("BackOfficeManager");
 
         g.MapPost("/stock/adjust", async (StockService svc,
-            [FromForm] Guid productId, [FromForm] decimal quantity, [FromForm] string? reference, CancellationToken ct) =>
+            [FromForm] Guid productId, [FromForm] string? quantity, [FromForm] string? reference, CancellationToken ct) =>
         {
-            try { await svc.AdjustAsync(productId, quantity, reference, ct); return Results.Redirect("/stock"); }
+            // Signed: a stock-take adjustment can be negative (shrinkage), so allow a leading '-'.
+            try { await svc.AdjustAsync(productId, RequiredDecimal(quantity, "Quantity", allowNegative: true), reference, ct); return Results.Redirect("/stock"); }
             catch (ArgumentException ex) { return Back("/stock", ex); }
         }).RequireAuthorization("BackOfficeManager");
 
@@ -307,6 +311,40 @@ internal static class BackOfficeEndpoints
 
     /// <summary>Form selects post "" for "no category"; turn a blank/invalid value into null.</summary>
     private static Guid? ParseGuid(string? value) => Guid.TryParse(value, out var g) && g != Guid.Empty ? g : null;
+
+    // Number inputs post "" when left blank, which minimal-API CANNOT bind to a value-type (decimal/int)
+    // or its nullable — it throws a raw 400. So OPTIONAL numeric form fields are bound as string? and parsed
+    // here: blank → null (clears the field); a real value → invariant parse (number inputs always post "."),
+    // with a clean validation message on bad/negative input. REQUIRED fields parse the same way but reject blank.
+
+    /// <summary>Optional, non-negative decimal: blank → null; bad/negative → ArgumentException.</summary>
+    private static decimal? OptionalDecimal(string? value, string field)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        if (!decimal.TryParse(value.Trim(), NumberStyles.Number, CultureInfo.InvariantCulture, out var d))
+            throw new ArgumentException($"{field} must be a number.");
+        if (d < 0) throw new ArgumentException($"{field} cannot be negative.");
+        return d;
+    }
+
+    /// <summary>Required decimal: blank/bad → ArgumentException. allowNegative for signed quantities.</summary>
+    private static decimal RequiredDecimal(string? value, string field, bool allowNegative = false)
+    {
+        if (string.IsNullOrWhiteSpace(value)) throw new ArgumentException($"{field} is required.");
+        if (!decimal.TryParse(value.Trim(), NumberStyles.Number, CultureInfo.InvariantCulture, out var d))
+            throw new ArgumentException($"{field} must be a number.");
+        if (!allowNegative && d < 0) throw new ArgumentException($"{field} cannot be negative.");
+        return d;
+    }
+
+    /// <summary>Optional whole number: blank → fallback; bad → ArgumentException.</summary>
+    private static int OptionalInt(string? value, string field, int fallback = 0)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return fallback;
+        if (!int.TryParse(value.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n))
+            throw new ArgumentException($"{field} must be a whole number.");
+        return n;
+    }
 
     private static bool TryBase64(string? value, out byte[] bytes)
     {
