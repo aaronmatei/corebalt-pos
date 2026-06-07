@@ -10,7 +10,10 @@ internal static class Mapping
     public static MoneyDto ToDto(this Money m) => new(m.Amount, m.Currency);
 
     public static ProductResponse ToResponse(this Product p) =>
-        new(p.Id, p.Sku, p.Name, p.Price.ToDto(), p.UnitOfMeasure, p.IsActive, p.Barcode, p.TaxClass);
+        new(p.Id, p.Sku, p.Name, p.Price.ToDto(), p.UnitOfMeasure, p.IsActive, p.Barcode, p.TaxClass, p.CategoryId);
+
+    public static CategoryResponse ToResponse(this Category c) =>
+        new(c.Id, c.Name, c.ParentId, c.DisplayOrder, c.IsActive);
 
     public static SaleResponse ToResponse(this Sale s) => new(
         s.Id,

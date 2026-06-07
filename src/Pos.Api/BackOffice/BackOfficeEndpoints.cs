@@ -96,13 +96,14 @@ internal static class BackOfficeEndpoints
         // ── Products ──
         g.MapPost("/products", async (ProductService svc, ICurrentContext ctx, IMerchantProfileRepository merchants,
             [FromForm] string sku, [FromForm] string name, [FromForm] string? barcode,
-            [FromForm] string unit, [FromForm] string taxClass, [FromForm] decimal priceAmount, CancellationToken ct) =>
+            [FromForm] string unit, [FromForm] string taxClass, [FromForm] decimal priceAmount,
+            [FromForm] string? categoryId, CancellationToken ct) =>
         {
             try
             {
                 var currency = (await merchants.GetAsync(ctx.TenantId, ct))?.Currency ?? "KES";
                 await svc.CreateAsync(sku, name, new Money(priceAmount, currency),
-                    Parse<UnitOfMeasure>(unit), barcode, Parse<TaxClass>(taxClass), ct);
+                    Parse<UnitOfMeasure>(unit), barcode, Parse<TaxClass>(taxClass), ParseGuid(categoryId), ct);
                 return Results.Redirect("/products");
             }
             catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return Back("/products/new", ex); }
@@ -110,15 +111,34 @@ internal static class BackOfficeEndpoints
 
         g.MapPost("/products/{id:guid}", async (Guid id, ProductService svc,
             [FromForm] string name, [FromForm] string? barcode, [FromForm] string unit,
-            [FromForm] string taxClass, [FromForm] string? isActive, CancellationToken ct) =>
+            [FromForm] string taxClass, [FromForm] string? isActive, [FromForm] string? categoryId, CancellationToken ct) =>
         {
             try
             {
                 await svc.UpdateAsync(id, name, barcode, Parse<UnitOfMeasure>(unit), Parse<TaxClass>(taxClass),
-                    isActive == "true", ct);
+                    isActive == "true", ParseGuid(categoryId), ct);
                 return Results.Redirect("/products");
             }
             catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return Back($"/products/{id}", ex); }
+        }).RequireAuthorization("BackOfficeManager");
+
+        // ── Categories ──
+        g.MapPost("/categories", async (CategoryService svc,
+            [FromForm] string name, [FromForm] int? displayOrder, CancellationToken ct) =>
+        {
+            try { await svc.CreateAsync(name, parentId: null, displayOrder ?? 0, ct); return Results.Redirect("/categories"); }
+            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return Back("/categories", ex); }
+        }).RequireAuthorization("BackOfficeManager");
+
+        g.MapPost("/categories/{id:guid}", async (Guid id, CategoryService svc,
+            [FromForm] string name, [FromForm] int? displayOrder, [FromForm] string? isActive, CancellationToken ct) =>
+        {
+            try
+            {
+                await svc.UpdateAsync(id, name, parentId: null, displayOrder ?? 0, isActive == "true", ct);
+                return Results.Redirect("/categories");
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return Back("/categories", ex); }
         }).RequireAuthorization("BackOfficeManager");
 
         g.MapPost("/products/{id:guid}/price", async (Guid id, ProductService svc, ICurrentContext ctx,
@@ -249,6 +269,9 @@ internal static class BackOfficeEndpoints
         Results.Redirect($"{path}?error={Uri.EscapeDataString(ex.Message)}");
 
     private static T Parse<T>(string value) where T : struct, Enum => Enum.Parse<T>(value, ignoreCase: true);
+
+    /// <summary>Form selects post "" for "no category"; turn a blank/invalid value into null.</summary>
+    private static Guid? ParseGuid(string? value) => Guid.TryParse(value, out var g) && g != Guid.Empty ? g : null;
 
     private static ClaimsPrincipal BuildPrincipal(User u)
     {

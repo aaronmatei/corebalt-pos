@@ -24,14 +24,29 @@ internal sealed class ProductRepository : IProductRepository
             .Where(p => p.TenantId == tenantId && p.StoreId == storeId && p.Barcode == barcode)
             .FirstOrDefaultAsync(ct);
 
-    public async Task<IReadOnlyList<Product>> ListAsync(Guid tenantId, Guid storeId, bool includeInactive = false, CancellationToken ct = default) =>
-        await _db.Products
-            .Where(p => p.TenantId == tenantId && p.StoreId == storeId && (includeInactive || p.IsActive))
-            .OrderBy(p => p.Name)
-            .ToListAsync(ct);
+    public async Task<IReadOnlyList<Product>> ListAsync(Guid tenantId, Guid storeId, bool includeInactive = false,
+        Guid? categoryId = null, CancellationToken ct = default)
+    {
+        var q = _db.Products.Where(p => p.TenantId == tenantId && p.StoreId == storeId && (includeInactive || p.IsActive));
+        if (categoryId == IProductRepository.Uncategorized)   // Guid.Empty sentinel → products with no category
+            q = q.Where(p => p.CategoryId == null);
+        else if (categoryId is { } cid)
+            q = q.Where(p => p.CategoryId == cid);
+        return await q.OrderBy(p => p.Name).ToListAsync(ct);
+    }
 
     public async Task AddAsync(Product product, CancellationToken ct = default) =>
         await _db.Products.AddAsync(product, ct);
+
+    public async Task<IReadOnlyDictionary<Guid, Guid?>> GetCategoryMapAsync(Guid tenantId, IReadOnlyCollection<Guid> productIds, CancellationToken ct = default)
+    {
+        if (productIds.Count == 0) return new Dictionary<Guid, Guid?>();
+        var rows = await _db.Products
+            .Where(p => p.TenantId == tenantId && productIds.Contains(p.Id))
+            .Select(p => new { p.Id, p.CategoryId })
+            .ToListAsync(ct);
+        return rows.ToDictionary(r => r.Id, r => r.CategoryId);
+    }
 
     public Task<bool> SkuExistsAsync(Guid tenantId, string sku, Guid? excludingProductId = null, CancellationToken ct = default) =>
         _db.Products.AnyAsync(p => p.TenantId == tenantId && p.Sku == sku

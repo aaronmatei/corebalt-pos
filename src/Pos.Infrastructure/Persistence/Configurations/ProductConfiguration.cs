@@ -19,6 +19,7 @@ internal sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
         b.Property(p => p.Barcode).HasColumnName("barcode").HasMaxLength(64);
         b.Property(p => p.UnitOfMeasure).HasColumnName("unit_of_measure").HasConversion<int>();
         b.Property(p => p.TaxClass).HasColumnName("tax_class").HasConversion<int>();
+        b.Property(p => p.CategoryId).HasColumnName("category_id");
         b.Property(p => p.IsActive).HasColumnName("is_active");
 
         b.OwnsOne(p => p.Price, m =>
@@ -39,6 +40,12 @@ internal sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
             .IsUnique()
             .HasFilter("barcode IS NOT NULL")
             .HasDatabaseName("ux_products_tenant_barcode");
+
+        // Speeds up "products in this category" browsing (till + back-office). Filtered to non-null so
+        // the index stays small (uncategorized products aren't queried through it).
+        b.HasIndex(p => new { p.TenantId, p.CategoryId })
+            .HasFilter("category_id IS NOT NULL")
+            .HasDatabaseName("ix_products_tenant_category");
 
         b.Ignore(p => p.DomainEvents);
     }

@@ -20,13 +20,14 @@ internal static class CatalogEndpoints
         {
             var product = await svc.CreateAsync(
                 req.Sku, req.Name, new Money(req.PriceAmount, req.PriceCurrency),
-                req.UnitOfMeasure, req.Barcode, req.TaxClass, ct);
+                req.UnitOfMeasure, req.Barcode, req.TaxClass, req.CategoryId, ct);
             return Results.Created($"/api/v1/products/{product.Id}", product.ToResponse());
         });
 
-        g.MapGet("/", async (ProductService svc, CancellationToken ct, bool includeInactive = false) =>
+        // ?categoryId=<guid> narrows to one category; ?categoryId=00000000-…-0000 (Guid.Empty) → uncategorized.
+        g.MapGet("/", async (ProductService svc, CancellationToken ct, bool includeInactive = false, Guid? categoryId = null) =>
         {
-            var list = await svc.ListAsync(includeInactive, ct);
+            var list = await svc.ListAsync(includeInactive, categoryId, ct);
             return Results.Ok(list.Select(p => p.ToResponse()).ToList());
         });
 
@@ -50,7 +51,7 @@ internal static class CatalogEndpoints
 
         mgr.MapPut("/{id:guid}", async (Guid id, UpdateProductRequest req, ProductService svc, CancellationToken ct) =>
         {
-            var product = await svc.UpdateAsync(id, req.Name, req.Barcode, req.UnitOfMeasure, req.TaxClass, req.IsActive, ct);
+            var product = await svc.UpdateAsync(id, req.Name, req.Barcode, req.UnitOfMeasure, req.TaxClass, req.IsActive, req.CategoryId, ct);
             return product is null ? Results.NotFound() : Results.Ok(product.ToResponse());
         });
 

@@ -58,6 +58,14 @@
               <Button Grid.Column="1" Content="Refresh" Margin="6,0,0,0"
                       Command="{Binding RefreshCommand}"/>
             </Grid>
+            <ComboBox DockPanel.Dock="Top" Margin="0,0,0,8" HorizontalAlignment="Stretch"
+                      ItemsSource="{Binding Categories}" SelectedItem="{Binding SelectedCategory}">
+              <ComboBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:CategoryFilterViewModel">
+                  <TextBlock Text="{Binding Name}"/>
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
             <ListBox ItemsSource="{Binding FilteredProducts}"
                      SelectedItem="{Binding SelectedProduct}">
               <ListBox.ItemTemplate>

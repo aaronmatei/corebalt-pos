@@ -1,4 +1,5 @@
 using System.Globalization;
+using Pos.Application.Catalog;
 using Pos.Application.Receipts;
 using Pos.Application.Sales;
 using Pos.Domain.Cash;
@@ -16,14 +17,19 @@ public sealed class CashOfficeReportService
     private readonly ISaleRepository _sales;
     private readonly ICreditNoteRepository _creditNotes;
     private readonly ICashMovementRepository _movements;
+    private readonly IProductRepository _products;
+    private readonly ICategoryRepository _categories;
     private readonly ReceiptOptions _options;
 
     public CashOfficeReportService(ISaleRepository sales, ICreditNoteRepository creditNotes,
-        ICashMovementRepository movements, ReceiptOptions options)
+        ICashMovementRepository movements, IProductRepository products, ICategoryRepository categories,
+        ReceiptOptions options)
     {
         _sales = sales;
         _creditNotes = creditNotes;
         _movements = movements;
+        _products = products;
+        _categories = categories;
         _options = options;
     }
 
@@ -70,6 +76,7 @@ public sealed class CashOfficeReportService
             ItemCount: items,
             Tenders: tenders,
             Vat: vat,
+            Categories: await CategoryLinesAsync(s.TenantId, sales, ct),
             ReturnsCount: returns.Count,
             ReturnsAmount: returns.Sum(n => n.RefundAmount.Amount),
             VoidsCount: voids.Count,
@@ -89,8 +96,41 @@ public sealed class CashOfficeReportService
 
         return new DaySummary(
             FromUtc: fromUtc, ToUtc: toUtc, GrossSales: gross, TransactionCount: txns, ItemCount: items,
-            Tenders: tenders, Vat: vat,
+            Tenders: tenders, Vat: vat, Categories: await CategoryLinesAsync(tenantId, sales, ct),
             ReturnsCount: notes.Count, ReturnsAmount: notes.Sum(n => n.RefundAmount.Amount), Currency: currency);
+    }
+
+    /// <summary>
+    /// Group sale lines by the product's CURRENT category (v1 join-to-current). Resolves productId →
+    /// CategoryId once, names from the category list (incl. inactive — a sold product may sit in a
+    /// since-deactivated category), then sums VAT-inclusive gross, VAT and item count per category.
+    /// "Uncategorized" (products with no category) collects the rest and is listed last.
+    /// </summary>
+    private async Task<List<ReportCategoryLine>> CategoryLinesAsync(Guid tenantId, IReadOnlyList<Sale> sales, CancellationToken ct)
+    {
+        var productIds = sales.SelectMany(s => s.Lines.Select(l => l.ProductId)).Distinct().ToList();
+        if (productIds.Count == 0) return [];
+
+        var map = await _products.GetCategoryMapAsync(tenantId, productIds, ct);
+        var names = (await _categories.ListAsync(tenantId, includeInactive: true, ct)).ToDictionary(c => c.Id, c => c.Name);
+
+        var agg = new Dictionary<Guid, (string Name, decimal Gross, decimal Vat, decimal Items)>();
+        foreach (var sale in sales)
+            foreach (var line in sale.Lines)
+            {
+                var catId = map.TryGetValue(line.ProductId, out var c) ? c : null;
+                var key = catId ?? Guid.Empty;
+                var name = catId is { } id && names.TryGetValue(id, out var n) ? n : "Uncategorized";
+                var cur = agg.TryGetValue(key, out var x) ? x : (Name: name, Gross: 0m, Vat: 0m, Items: 0m);
+                agg[key] = (name, cur.Gross + line.LineTotal.Amount, cur.Vat + line.VatAmount.Amount, cur.Items + line.Quantity);
+            }
+
+        return agg
+            .OrderBy(kv => kv.Key == Guid.Empty)            // Uncategorized last
+            .ThenByDescending(kv => kv.Value.Gross)         // biggest sellers first
+            .ThenBy(kv => kv.Value.Name, StringComparer.Ordinal)
+            .Select(kv => new ReportCategoryLine(kv.Value.Name, kv.Value.Gross, kv.Value.Vat, kv.Value.Items))
+            .ToList();
     }
 
     private (decimal gross, int txns, decimal items, List<ReportTenderTotal> tenders, List<ReportVatLine> vat, decimal cashSalesNet)
@@ -141,4 +181,5 @@ public sealed record DaySummary(
     DateTimeOffset FromUtc, DateTimeOffset ToUtc,
     decimal GrossSales, int TransactionCount, decimal ItemCount,
     IReadOnlyList<ReportTenderTotal> Tenders, IReadOnlyList<ReportVatLine> Vat,
+    IReadOnlyList<ReportCategoryLine> Categories,
     int ReturnsCount, decimal ReturnsAmount, string Currency);

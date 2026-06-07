@@ -2,6 +2,7 @@
 @page "/products/{Id:guid}"
 @attribute [Authorize(Policy = "BackOfficeManager")]
 @inject ProductService ProductSvc
+@inject Pos.Application.Catalog.CategoryService CategorySvc
 @inject Pos.Application.Tenancy.IMerchantProfileRepository Merchants
 @inject Pos.Application.Abstractions.ICurrentContext Ctx
 
@@ -20,6 +21,7 @@
                 <div><label>Barcode (optional)</label><input name="barcode" /></div>
                 <div><label>Unit</label>@UnitSelect(UnitOfMeasure.Each)</div>
                 <div><label>Tax class</label>@TaxSelect(TaxClass.StandardRated)</div>
+                <div><label>Category</label>@CategorySelect(null)</div>
                 <div><label>Price (@_currency)</label><input name="priceAmount" type="number" step="0.01" min="0" value="0" required /></div>
             </div>
             <div style="margin-top:14px"><button type="submit">Create product</button> <a class="btn ghost" href="/products">Cancel</a></div>
@@ -48,6 +50,7 @@ else
                 <div><label>Barcode</label><input name="barcode" value="@_p.Barcode" /></div>
                 <div><label>Unit</label>@UnitSelect(_p.UnitOfMeasure)</div>
                 <div><label>Tax class</label>@TaxSelect(_p.TaxClass)</div>
+                <div><label>Category</label>@CategorySelect(_p.CategoryId)</div>
                 <div>
                     <label>Status</label>
                     <select name="isActive">
@@ -80,10 +83,12 @@ else
     private bool IsNew => Id == Guid.Empty;
     private Product? _p;
     private string _currency = "KES";
+    private IReadOnlyList<Pos.Domain.Catalog.Category> _categories = [];
 
     protected override async Task OnInitializedAsync()
     {
         _currency = (await Merchants.GetAsync(Ctx.TenantId))?.Currency ?? "KES";
+        _categories = await CategorySvc.ListAsync(includeInactive: true);
         if (!IsNew) _p = await ProductSvc.GetAsync(Id);
     }
 
@@ -98,6 +103,16 @@ else
         @foreach (var t in Enum.GetValues<TaxClass>())
         {
             <option value="@t" selected="@(t == current)">@t</option>
+        }
+    </select>;
+
+    // Pickers list ACTIVE categories; an inactive one already on the product still shows (selected) so
+    // saving doesn't silently drop it. "Uncategorized" (empty value) is always available.
+    private RenderFragment CategorySelect(Guid? current) => @<select name="categoryId">
+        <option value="" selected="@(current is null)">Uncategorized</option>
+        @foreach (var c in _categories.Where(c => c.IsActive || c.Id == current))
+        {
+            <option value="@c.Id" selected="@(c.Id == current)">@c.Name@(c.IsActive ? "" : " (inactive)")</option>
         }
     </select>;
 }

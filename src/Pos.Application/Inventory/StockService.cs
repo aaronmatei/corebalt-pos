@@ -48,7 +48,7 @@ public sealed class StockService
 
     public async Task<IReadOnlyList<StockReportLine>> GetReportAsync(CancellationToken ct = default)
     {
-        var all = await _products.ListAsync(_ctx.TenantId, _ctx.StoreId, includeInactive: true, ct);
+        var all = await _products.ListAsync(_ctx.TenantId, _ctx.StoreId, includeInactive: true, ct: ct);
         var onHand = await _stock.GetOnHandByProductAsync(_ctx.TenantId, _ctx.StoreId, ct);
         return all.Select(p => new StockReportLine(
             p.Id, p.Sku, p.Name, p.UnitOfMeasure, p.IsActive,

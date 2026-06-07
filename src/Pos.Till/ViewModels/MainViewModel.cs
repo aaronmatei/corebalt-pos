@@ -17,11 +17,19 @@ public partial class MainViewModel : ObservableObject
     private readonly IPosApiClient _api;
     private readonly TillOptions _options;
 
-    // Full catalogue; FilteredProducts is the search-narrowed view bound by the list.
+    // Full catalogue; FilteredProducts is the search- and category-narrowed view bound by the list.
     public ObservableCollection<ProductRowViewModel> Products { get; } = new();
     public ObservableCollection<CartLineViewModel> Cart { get; } = new();
 
+    /// <summary>Category filter options shown above the catalogue (All / Uncategorized / each category).</summary>
+    public ObservableCollection<CategoryFilterViewModel> Categories { get; } = new();
+
     [ObservableProperty] private string _searchText = "";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(FilteredProducts))]
+    private CategoryFilterViewModel? _selectedCategory;
+
     [ObservableProperty] private string _barcodeText = "";
 
     [ObservableProperty]
@@ -82,10 +90,18 @@ public partial class MainViewModel : ObservableObject
     }
 
     // ── Derived (preview) values ──────────────────────────────────────────────────────────
-    public IEnumerable<ProductRowViewModel> FilteredProducts =>
-        string.IsNullOrWhiteSpace(SearchText)
-            ? Products
-            : Products.Where(p => p.Matches(SearchText.Trim()));
+    public IEnumerable<ProductRowViewModel> FilteredProducts
+    {
+        get
+        {
+            IEnumerable<ProductRowViewModel> items = Products;
+            if (SelectedCategory is { IsAll: false } cat)
+                items = items.Where(cat.Matches);
+            if (!string.IsNullOrWhiteSpace(SearchText))
+                items = items.Where(p => p.Matches(SearchText.Trim()));
+            return items;
+        }
+    }
 
     public decimal Subtotal => Cart.Sum(l => l.LineTotal);
     public decimal TenderedTotal => CashAmount + MpesaAmount;
@@ -136,6 +152,7 @@ public partial class MainViewModel : ObservableObject
     // ── Lifecycle ─────────────────────────────────────────────────────────────────────────
     public async Task InitializeAsync()
     {
+        await LoadCategoriesAsync();
         await RefreshAsync();
         await LoadShiftAsync(); // gate selling on an open shift; prompt to open one if none
     }
@@ -153,6 +170,20 @@ public partial class MainViewModel : ObservableObject
             OnPropertyChanged(nameof(FilteredProducts));
             StatusMessage = $"Loaded {Products.Count} product(s) from {_options.BaseUrl}.";
         });
+    }
+
+    /// <summary>Load the active categories into the catalogue filter (All + Uncategorized + each).
+    /// Best-effort: a failure just leaves the default "All" filter so selling is never blocked.</summary>
+    private async Task LoadCategoriesAsync()
+    {
+        var result = await _api.ListCategoriesAsync();
+        Categories.Clear();
+        Categories.Add(CategoryFilterViewModel.All);
+        Categories.Add(CategoryFilterViewModel.Uncategorized);
+        if (result.Ok)
+            foreach (var c in result.Value!.Where(c => c.IsActive))
+                Categories.Add(CategoryFilterViewModel.For(c));
+        SelectedCategory = CategoryFilterViewModel.All;
     }
 
     // ── Scanning ──────────────────────────────────────────────────────────────────────────

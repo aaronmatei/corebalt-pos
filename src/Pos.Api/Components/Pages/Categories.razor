@@ -1,0 +1,60 @@
+@page "/categories"
+@attribute [Authorize(Policy = "BackOfficeManager")]
+@inject Pos.Application.Catalog.CategoryService CategorySvc
+
+<h1>Categories</h1>
+<p style="color:var(--muted);margin-top:0">Tenant-wide groupings for till browsing and sales-by-category reports. Deactivating a category hides it from product pickers but keeps products already in it.</p>
+
+@if (!string.IsNullOrEmpty(Error)) { <p class="error">@Error</p> }
+
+<div class="card">
+    <h2>New category</h2>
+    <form method="post" action="/backoffice/categories">
+        <Csrf />
+        <div class="row">
+            <div><label>Name</label><input name="name" required /></div>
+            <div><label>Display order</label><input name="displayOrder" type="number" step="1" value="0" /></div>
+        </div>
+        <div style="margin-top:14px"><button type="submit">Create category</button></div>
+    </form>
+</div>
+
+<table>
+    <thead>
+        <tr><th>Category (edit inline)</th></tr>
+    </thead>
+    <tbody>
+        @foreach (var c in _items)
+        {
+            <tr class="@(c.IsActive ? "" : "inactive")">
+                <td>
+                    <form method="post" action="@($"/backoffice/categories/{c.Id}")" style="display:flex;gap:8px;align-items:center">
+                        <Csrf />
+                        <input name="displayOrder" type="number" step="1" value="@c.DisplayOrder" title="Display order" style="width:72px" />
+                        <input name="name" value="@c.Name" required style="flex:1;min-width:160px" />
+                        <select name="isActive">
+                            <option value="true" selected="@c.IsActive">Active</option>
+                            <option value="false" selected="@(!c.IsActive)">Inactive</option>
+                        </select>
+                        <button type="submit">Save</button>
+                    </form>
+                </td>
+            </tr>
+        }
+        @if (_items.Count == 0)
+        {
+            <tr><td style="color:var(--muted)">No categories yet.</td></tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    [SupplyParameterFromQuery] public string? Error { get; set; }
+
+    private IReadOnlyList<Category> _items = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _items = await CategorySvc.ListAsync(includeInactive: true);
+    }
+}

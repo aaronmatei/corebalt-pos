@@ -20,7 +20,10 @@ public sealed record ProductDto(
     MoneyDto Price,
     UnitOfMeasure UnitOfMeasure,
     bool IsActive,
-    string? Barcode);
+    string? Barcode,
+    Guid? CategoryId);
+
+public sealed record CategoryDto(Guid Id, string Name, Guid? ParentId, int DisplayOrder, bool IsActive);
 
 public sealed record CheckoutLineDto(Guid ProductId, decimal Quantity);
 

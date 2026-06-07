@@ -93,7 +93,21 @@ Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Databa
   (deployment/ops app-side foundation: Windows Service host + self-contained publish + safe auto-migration),
   Inno Setup installers (store server with portable Postgres + till), and backups + restore (scheduled
   pg_dump, verify, off-machine copy, retention, guarded restore).
-  All six projects target `net10.0`; `dotnet test` is green at 114 (29 domain + 85 API).
+  All six projects target `net10.0`; `dotnet test` is green at 121 (29 domain + 92 API).
+- **Product categories (S1 groundwork):** a tenant-scoped `Category` aggregate (`Pos.Domain/Catalog`;
+  Id/TenantId/Name/nullable ParentId/DisplayOrder/IsActive) — master data like Product but owned at the
+  TENANT level (shared across branches; M2-ready). ParentId is nullable so the tree is FLAT today yet
+  hierarchy-ready with no migration; uniqueness is `(TenantId, ParentId, Name)` enforced by a unique index
+  with **NULLS NOT DISTINCT** (so two roots can't share a name) plus an app-level 409 check. `Product`
+  gains a nullable `CategoryId` (a loose Guid ref, no navigation; null = "Uncategorized" so existing
+  products keep selling). `CategoryService` + `ProductService` (category validated on assign, list filter)
+  share the JSON API (`/api/v1/categories` CRUD-ish, Manager writes; `GET /products?categoryId=` with
+  `Guid.Empty` = uncategorized) and the Blazor back-office (`/categories` page, product picker + list
+  filter, nav link). **Sales-by-category** is added to the X/Z report + day-summary as a read-side join to
+  the product's CURRENT category (v1 — `CashOfficeReportService.CategoryLinesAsync`; to keep reports exact
+  after a product is recategorized, snapshot CategoryId onto the sale line like TaxClass — the rigorous
+  upgrade). The **till** catalogue gets a category filter ComboBox (All / Uncategorized / each active
+  category) — handy for non-barcoded produce/weighed goods/services. Migration `AddProductCategories`.
 - **Installers (Inno Setup; `deploy/installer/`):** turnkey, admin, no dev tools on the client.
   `store-server.iss` bundles the self-contained server + **portable Postgres** and on a fresh install runs
   `scripts/provision-server.ps1` — `initdb` an ISOLATED cluster under `ProgramData\Corebalt POS\data` on

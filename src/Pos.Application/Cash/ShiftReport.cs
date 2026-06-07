@@ -25,6 +25,7 @@ public sealed record ShiftReport(
     decimal ItemCount,
     IReadOnlyList<ReportTenderTotal> Tenders,
     IReadOnlyList<ReportVatLine> Vat,
+    IReadOnlyList<ReportCategoryLine> Categories,
     int ReturnsCount,
     decimal ReturnsAmount,
     int VoidsCount,
@@ -34,6 +35,10 @@ public sealed record ShiftReport(
 
 public sealed record ReportTenderTotal(string Type, int Count, decimal Amount);
 public sealed record ReportVatLine(string Code, string Label, decimal Net, decimal Vat);
+
+/// <summary>Sales grouped by the product's CURRENT category (v1 joins to the live category; a product
+/// recategorized after the sale moves with it). "Uncategorized" collects products with no category.</summary>
+public sealed record ReportCategoryLine(string Name, decimal Gross, decimal Vat, decimal ItemCount);
 
 public sealed record CashReconciliation(
     decimal OpeningFloat,
@@ -85,6 +90,14 @@ public static class ShiftReportTextRenderer
         foreach (var v in r.Vat)
             Line(ReceiptText.LeftRight($"  {v.Code} {v.Label}  net {M(v.Net)}", $"VAT {M(v.Vat)}", cols));
         Line(ReceiptText.Rule('-', cols));
+
+        if (r.Categories.Count > 0)
+        {
+            Line("BY CATEGORY");
+            foreach (var cat in r.Categories)
+                Line(ReceiptText.LeftRight($"  {cat.Name}", M(cat.Gross), cols));
+            Line(ReceiptText.Rule('-', cols));
+        }
 
         Line(ReceiptText.LeftRight($"Returns (x{r.ReturnsCount})", M(r.ReturnsAmount), cols));
         Line(ReceiptText.LeftRight($"Voids (x{r.VoidsCount})", M(r.VoidsAmount), cols));

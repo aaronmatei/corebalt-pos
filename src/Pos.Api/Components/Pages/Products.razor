@@ -2,6 +2,7 @@
 @page "/products"
 @attribute [Authorize(Policy = "BackOfficeManager")]
 @inject ProductService ProductSvc
+@inject Pos.Application.Catalog.CategoryService CategorySvc
 @inject Pos.Application.Tenancy.IMerchantProfileRepository Merchants
 @inject Pos.Application.Abstractions.ICurrentContext Ctx
 
@@ -9,6 +10,14 @@
 
 <form method="get" action="/products" class="toolbar">
     <input name="q" value="@Q" placeholder="Search name / SKU / barcode" style="max-width:280px" />
+    <select name="categoryId">
+        <option value="" selected="@(Category is null)">All categories</option>
+        <option value="@Guid.Empty" selected="@(Category == Guid.Empty)">Uncategorized</option>
+        @foreach (var c in _categories)
+        {
+            <option value="@c.Id" selected="@(Category == c.Id)">@c.Name@(c.IsActive ? "" : " (inactive)")</option>
+        }
+    </select>
     <label style="margin:0;display:flex;align-items:center;gap:6px;color:var(--ink)">
         <input type="checkbox" name="includeInactive" value="true" checked="@IncludeInactive" style="width:auto" />
         Include inactive
@@ -21,7 +30,7 @@
 
 <table>
     <thead>
-        <tr><th>Name</th><th>SKU</th><th>Barcode</th><th>Unit</th><th>Tax</th><th style="text-align:right">Price</th><th>Status</th><th></th></tr>
+        <tr><th>Name</th><th>SKU</th><th>Category</th><th>Barcode</th><th>Unit</th><th>Tax</th><th style="text-align:right">Price</th><th>Status</th><th></th></tr>
     </thead>
     <tbody>
         @foreach (var p in _items)
@@ -29,6 +38,7 @@
             <tr class="@(p.IsActive ? "" : "inactive")">
                 <td>@p.Name</td>
                 <td>@p.Sku</td>
+                <td>@CategoryName(p.CategoryId)</td>
                 <td>@(p.Barcode ?? "—")</td>
                 <td>@p.UnitOfMeasure</td>
                 <td>@p.TaxClass</td>
@@ -39,7 +49,7 @@
         }
         @if (_items.Count == 0)
         {
-            <tr><td colspan="8" style="color:var(--muted)">No products.</td></tr>
+            <tr><td colspan="9" style="color:var(--muted)">No products.</td></tr>
         }
     </tbody>
 </table>
@@ -47,15 +57,21 @@
 @code {
     [SupplyParameterFromQuery(Name = "q")] public string? Q { get; set; }
     [SupplyParameterFromQuery] public bool IncludeInactive { get; set; }
+    [SupplyParameterFromQuery(Name = "categoryId")] public Guid? Category { get; set; }
     [SupplyParameterFromQuery] public string? Error { get; set; }
 
     private IReadOnlyList<Product> _items = [];
+    private IReadOnlyList<Pos.Domain.Catalog.Category> _categories = [];
+    private Dictionary<Guid, string> _categoryNames = new();
     private string _currency = "KES";
 
     protected override async Task OnInitializedAsync()
     {
         _currency = (await Merchants.GetAsync(Ctx.TenantId))?.Currency ?? "KES";
-        var all = await ProductSvc.ListAsync(IncludeInactive);
+        _categories = await CategorySvc.ListAsync(includeInactive: true);
+        _categoryNames = _categories.ToDictionary(c => c.Id, c => c.Name);
+
+        var all = await ProductSvc.ListAsync(IncludeInactive, Category);
         _items = string.IsNullOrWhiteSpace(Q)
             ? all
             : all.Where(p =>
@@ -63,4 +79,7 @@
                 p.Sku.Contains(Q, StringComparison.OrdinalIgnoreCase) ||
                 (p.Barcode?.Contains(Q, StringComparison.OrdinalIgnoreCase) ?? false)).ToList();
     }
+
+    private string CategoryName(Guid? id) =>
+        id is { } c && _categoryNames.TryGetValue(c, out var n) ? n : "—";
 }

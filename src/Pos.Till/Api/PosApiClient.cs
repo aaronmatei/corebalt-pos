@@ -12,6 +12,7 @@ public interface IPosApiClient
     void SetAccessToken(string token);
     void ClearAccessToken();
     Task<ApiResult<IReadOnlyList<ProductDto>>> ListProductsAsync(CancellationToken ct = default);
+    Task<ApiResult<IReadOnlyList<CategoryDto>>> ListCategoriesAsync(CancellationToken ct = default);
     Task<ApiResult<ProductDto>> FindByBarcodeAsync(string barcode, CancellationToken ct = default);
     Task<ApiResult<CompleteSaleDto>> CheckoutAsync(CheckoutRequestDto request, CancellationToken ct = default);
     Task<ApiResult<SaleDto>> GetSaleAsync(Guid saleId, CancellationToken ct = default);
@@ -64,6 +65,9 @@ public sealed class PosApiClient : IPosApiClient, IDisposable
 
     public Task<ApiResult<IReadOnlyList<ProductDto>>> ListProductsAsync(CancellationToken ct = default) =>
         SendAsync<IReadOnlyList<ProductDto>>(() => _http.GetAsync($"{ApiBase}/products", ct), ct);
+
+    public Task<ApiResult<IReadOnlyList<CategoryDto>>> ListCategoriesAsync(CancellationToken ct = default) =>
+        SendAsync<IReadOnlyList<CategoryDto>>(() => _http.GetAsync($"{ApiBase}/categories", ct), ct);
 
     public Task<ApiResult<ProductDto>> FindByBarcodeAsync(string barcode, CancellationToken ct = default) =>
         SendAsync<ProductDto>(() => _http.GetAsync($"{ApiBase}/products/barcode/{Uri.EscapeDataString(barcode)}", ct), ct);

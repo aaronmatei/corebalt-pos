@@ -87,6 +87,7 @@ var conn = Environment.GetEnvironmentVariable("POS_DB")
 builder.Services.AddInfrastructure(conn, dataProtectionKeysPath);
 builder.Services.AddScoped<CheckoutService>();
 builder.Services.AddScoped<Pos.Application.Catalog.ProductService>();
+builder.Services.AddScoped<Pos.Application.Catalog.CategoryService>();
 builder.Services.AddScoped<Pos.Application.Inventory.StockService>();
 builder.Services.AddScoped<Pos.Application.Sales.ReturnService>();
 // Per-tenant integration secrets are encrypted at rest via ASP.NET Core Data Protection — wired in
@@ -282,6 +283,7 @@ app.UseAntiforgery(); // protects the back-office form posts
 // Every /api/v1 route requires an authenticated caller; back-office endpoints add the Manager policy.
 var v1 = app.MapGroup("/api/v1").RequireAuthorization();
 v1.MapCatalog();
+v1.MapCategories();
 v1.MapSales();
 v1.MapReceipts();
 v1.MapReturns();

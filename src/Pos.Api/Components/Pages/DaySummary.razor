@@ -37,6 +37,16 @@
                 <tr><td>@v.Code @v.Label</td><td style="text-align:right">@Money(v.Net)</td><td style="text-align:right">@Money(v.Vat)</td></tr>
             }
         </tbody></table>
+
+        <h2>By category</h2>
+        <table><thead><tr><th>Category</th><th style="text-align:right">Items</th><th style="text-align:right">Gross</th><th style="text-align:right">VAT</th></tr></thead>
+        <tbody>
+            @foreach (var c in _summary.Categories)
+            {
+                <tr><td>@c.Name</td><td style="text-align:right">@c.ItemCount.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)</td><td style="text-align:right">@Money(c.Gross)</td><td style="text-align:right">@Money(c.Vat)</td></tr>
+            }
+            @if (_summary.Categories.Count == 0) { <tr><td colspan="4" style="color:var(--muted)">No sales.</td></tr> }
+        </tbody></table>
     </div>
 }
 

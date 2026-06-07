@@ -29,13 +29,20 @@ public sealed class Product : AggregateRoot, ITenantScoped, IStoreScoped
 
     /// <summary>KRA VAT class. Drives how VAT is backed out of the (VAT-inclusive) price at checkout.</summary>
     public TaxClass TaxClass { get; private set; }
+
+    /// <summary>
+    /// Optional tenant-scoped <see cref="Category"/> this product belongs to (at most one). Null =
+    /// "Uncategorized" — so existing products keep working and sell with no category. A loose Guid
+    /// reference (no navigation), keeping the catalogue aggregate boundary clean like the other ids.
+    /// </summary>
+    public Guid? CategoryId { get; private set; }
     public bool IsActive { get; private set; }
 
     private Product() { } // EF
 
     public static Product Create(Guid tenantId, Guid storeId, string sku, string name,
         Money price, UnitOfMeasure unit = UnitOfMeasure.Each, string? barcode = null,
-        TaxClass taxClass = TaxClass.StandardRated)
+        TaxClass taxClass = TaxClass.StandardRated, Guid? categoryId = null)
     {
         if (string.IsNullOrWhiteSpace(sku)) throw new ArgumentException("Sku is required.", nameof(sku));
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("Name is required.", nameof(name));
@@ -52,6 +59,7 @@ public sealed class Product : AggregateRoot, ITenantScoped, IStoreScoped
             Price = price,
             UnitOfMeasure = unit,
             TaxClass = taxClass,
+            CategoryId = categoryId,
             IsActive = true
         };
     }
@@ -63,14 +71,18 @@ public sealed class Product : AggregateRoot, ITenantScoped, IStoreScoped
         => string.IsNullOrWhiteSpace(barcode) ? null : barcode.Trim();
 
     /// <summary>Edit the catalogue details (not price — price changes go through <see cref="Reprice"/>).</summary>
-    public void UpdateDetails(string name, string? barcode, UnitOfMeasure unit, TaxClass taxClass)
+    public void UpdateDetails(string name, string? barcode, UnitOfMeasure unit, TaxClass taxClass, Guid? categoryId)
     {
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("Name is required.", nameof(name));
         Name = name.Trim();
         Barcode = NormalizeBarcode(barcode);
         UnitOfMeasure = unit;
         TaxClass = taxClass;
+        CategoryId = categoryId;
     }
+
+    /// <summary>Move the product into a category (or clear it — null = Uncategorized).</summary>
+    public void AssignCategory(Guid? categoryId) => CategoryId = categoryId;
 
     /// <summary>
     /// Change the price. Never silent: a real change RAISES <see cref="ProductPriceChanged"/> (drained
