@@ -27,13 +27,13 @@ Offline-first: a till/branch must keep selling when the network drops.
 ## Layout
 - `src/Pos.SharedKernel` — Entity, AggregateRoot, ValueObject, Money, Uuid7, invariant interfaces
 - `src/Pos.Domain` — Sales (Sale/SaleLine/Tender, CreditNote), Inventory (StockMovement), Catalog (Product),
-  Payments (MpesaPayment), Identity (User/UserRole), Cash (RegisterSession/CashMovement), Tenancy (MerchantProfile/Branch, Mpesa/EtimsSettings, Entitlements, Register, PrinterProfile)
+  Payments (MpesaPayment), Identity (User/UserRole), Cash (RegisterSession/CashMovement), Tenancy (MerchantProfile/Branch, Mpesa/EtimsSettings, Entitlements, Register, PrinterProfile, OpsSettings)
 - `src/Pos.Application` — ports (repositories, IUnitOfWork, IClock, **IMpesaClient**, IPasswordHasher,
   ITokenIssuer, IUserRepository) + use cases `CheckoutService`, `MpesaPaymentService`, `AuthService`,
   and `ProductService` + `StockService` (single home for product/stock orchestration, shared by the
   API and the back-office); `Receipts/`; `Fiscalization/`; `Identity/` (AuthService, StoreServerOptions, PosClaims);
   `Tenancy/` (SetupService, SettingsService, IEntitlements); `Licensing/` (signed-licence verify/sign + codec);
-  `Cash/` (CashOfficeService open/close/movement + CashOfficeReportService X/Z + DaySummary projections)
+  `Cash/` (CashOfficeService open/close/movement + CashOfficeReportService X/Z + DaySummary projections); `Ops/` (IBackupService backups/restore)
 - `src/Pos.Infrastructure` — PosDbContext, EF configurations, repositories, outbox interceptor,
   **DarajaMpesaClient** (Mpesa/, per-tenant via MpesaSettingsResolver), **FakeEtimsProvider** (Fiscalization/),
   **JwtTokenIssuer + AspNetPasswordHasher** (Identity/), **DataProtectionSecretProtector** (Security/),
@@ -63,7 +63,7 @@ dotnet ef database update --project src/Pos.Infrastructure --startup-project sam
 dotnet run  --project samples/Pos.Persistence.Demo   # save→reload a sale, print the outbox row
 dotnet run  --project src/Pos.Api                    # store-server host on http://localhost:5080; auto-applies migrations in Development
 dotnet run  --project src/Pos.Till                   # Avalonia till (pure API client); talks to :5080
-dotnet test                                          # domain + API integration tests (110)
+dotnet test                                          # domain + API integration tests (114)
 ```
 Receipt header + currency come from the tenant's DB-backed `MerchantProfile` (set in the /setup wizard),
 NOT appsettings. A fresh install routes to `/setup`; you can't transact until provisioned. M-Pesa + eTIMS
@@ -90,8 +90,10 @@ Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Databa
   entitlements + first-run setup wizard), and step 13 (thermal printing pipeline: per-register
   PrinterProfile, ESC/POS builder, logo/QR rasterizer, Network/File/Null printers, PNG preview), and
   step 14 (cash management + close-of-day: register shifts, drawer movements, X/Z reports), and step 15
-  (deployment/ops app-side foundation: Windows Service host + self-contained publish + safe auto-migration).
-  All six projects target `net10.0`; `dotnet test` is green at 110 (29 domain + 81 API).
+  (deployment/ops app-side foundation: Windows Service host + self-contained publish + safe auto-migration),
+  Inno Setup installers (store server with portable Postgres + till), and backups + restore (scheduled
+  pg_dump, verify, off-machine copy, retention, guarded restore).
+  All six projects target `net10.0`; `dotnet test` is green at 114 (29 domain + 85 API).
 - **Installers (Inno Setup; `deploy/installer/`):** turnkey, admin, no dev tools on the client.
   `store-server.iss` bundles the self-contained server + **portable Postgres** and on a fresh install runs
   `scripts/provision-server.ps1` — `initdb` an ISOLATED cluster under `ProgramData\Corebalt POS\data` on
@@ -119,6 +121,18 @@ Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Databa
   per-install (`Ops:DataProtectionKeysPath`). Verified live: published self-contained, ran as a console in
   Production, bound `0.0.0.0:5081`, backed-up-then-migrated a one-behind populated DB, a LAN client reached
   the API. See `deploy/README.md`.
+- **Backups + restore (deployment part 3; `Pos.Application/Ops` + `Pos.Infrastructure/Ops/BackupManager`):**
+  uses the bundled portable `pg_dump`/`pg_restore`. `BackupScheduler` (hosted) runs a daily `pg_dump -Fc`
+  at `Backup:DailyTime` (default 22:30) to `Ops:BackupDirectory`; **Back up now** (Manager) does it on
+  demand. Each dump is **integrity-checked** (`pg_restore --list` → `Verified`), **copied off-machine** to
+  the DB-backed `OpsSettings.SecondBackupLocation` (a back-office **Settings** field — health warns if
+  unset), and **retention-pruned** (`Backup:RetentionDays`, default 14; `-pre-` migration/safety dumps are
+  kept). A `<dump>.meta.json` sidecar records verified/offsite/reason. **Health** (`GetHealthAsync`): last
+  backup + loud warnings when none in `Backup:StaleHours` (48) or the off-machine copy is unset/failing —
+  shown on the back-office **Backups** page. **Restore** (Manager-gated, destructive): takes a
+  **pre-restore-safety** backup FIRST, closes app connections (`pg_terminate_backend` + clear pool), then
+  `pg_restore --clean`s the chosen file (local or staged from off-machine). `POST /api/v1/backups`,
+  `GET /api/v1/backups[/health]`, `POST /api/v1/backups/restore`. Integration-tested against Postgres.
 - **Cash management + close-of-day (S3):** the spine is a `RegisterSession` (shift) per register
   (`Pos.Domain/Cash`): OpenedBy/At + OpeningFloat → ClosedBy/At + CountedCash/ExpectedCash/Variance;
   one OPEN session per register (filtered unique index); a closed session is an immutable end-of-day

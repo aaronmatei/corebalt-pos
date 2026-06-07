@@ -208,6 +208,28 @@ internal static class BackOfficeEndpoints
                 : Results.Redirect($"/settings?error={Uri.EscapeDataString(result.Error ?? "Invalid licence key.")}");
         }).RequireAuthorization("BackOfficeManager");
 
+        // ── Backups (Manager) ──
+        g.MapPost("/settings/second-location", async (SettingsService settings, ICurrentContext ctx,
+            [FromForm] string? path, CancellationToken ct) =>
+        {
+            await settings.UpdateSecondBackupLocationAsync(ctx.TenantId, path, ct);
+            return Results.Redirect("/settings?saved=backup");
+        }).RequireAuthorization("BackOfficeManager");
+
+        g.MapPost("/backups/now", async (Pos.Application.Ops.IBackupService backups, CancellationToken ct) =>
+        {
+            try { var r = await backups.BackupNowAsync("manual", ct); return Results.Redirect($"/backups?saved=Backup+created:+{Uri.EscapeDataString(r.FileName)}"); }
+            catch (Exception ex) { return Results.Redirect($"/backups?error={Uri.EscapeDataString(ex.Message)}"); }
+        }).RequireAuthorization("BackOfficeManager");
+
+        g.MapPost("/backups/restore", async (Pos.Application.Ops.IBackupService backups, [FromForm] string fileName, CancellationToken ct) =>
+        {
+            var result = await backups.RestoreAsync(fileName, ct);
+            return result.Ok
+                ? Results.Redirect($"/backups?saved=Restored+from+{Uri.EscapeDataString(fileName)}+(safety+backup:+{Uri.EscapeDataString(result.SafetyBackup ?? "")})")
+                : Results.Redirect($"/backups?error={Uri.EscapeDataString(result.Error ?? "Restore failed.")}");
+        }).RequireAuthorization("BackOfficeManager");
+
         // Print an X/Z report on the session's register printer (reuses the ESC/POS pipeline).
         g.MapPost("/sessions/{id:guid}/print", async (Guid id, ICurrentContext ctx,
             Pos.Application.Cash.IRegisterSessionRepository sessions, Pos.Application.Cash.CashOfficeReportService reports,

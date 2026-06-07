@@ -3,12 +3,26 @@
 @inject Pos.Application.Tenancy.IMpesaSettingsRepository MpesaRepo
 @inject Pos.Application.Tenancy.IEtimsSettingsRepository EtimsRepo
 @inject Pos.Application.Tenancy.IEntitlements Entitlements
+@inject Pos.Application.Tenancy.IOpsSettingsRepository OpsRepo
 @inject Pos.Application.Abstractions.ICurrentContext Ctx
 
 <h1>Settings</h1>
 
 @if (!string.IsNullOrEmpty(Saved)) { <p style="color:var(--accent)">Saved: @Saved.</p> }
 @if (!string.IsNullOrEmpty(Error)) { <p class="error">@Error</p> }
+
+<div class="card">
+    <h2>Backups</h2>
+    <p style="color:var(--muted);margin-top:0">A second, OFF-MACHINE copy of every backup (external drive
+    or network share) protects you if this PC fails. Strongly recommended.</p>
+    <form method="post" action="/backoffice/settings/second-location">
+        <Csrf />
+        <label>Off-machine backup location (path or \\\\server\\share)</label>
+        <input name="path" value="@(_ops?.SecondBackupLocation)" placeholder="e.g. D:\\CorebaltBackups or \\\\nas\\pos" />
+        <div style="margin-top:10px"><button type="submit">Save</button>
+            <a class="btn ghost" href="/backups">View backups</a></div>
+    </form>
+</div>
 
 <div class="card">
     <h2>Licence</h2>
@@ -79,11 +93,13 @@
     private Pos.Domain.Tenancy.MpesaSettings? _mpesa;
     private Pos.Domain.Tenancy.EtimsSettings? _etims;
     private Pos.Domain.Tenancy.Entitlements? _ent;
+    private Pos.Domain.Tenancy.OpsSettings? _ops;
 
     protected override async Task OnInitializedAsync()
     {
         _mpesa = await MpesaRepo.GetAsync(Ctx.TenantId);
         _etims = await EtimsRepo.GetAsync(Ctx.TenantId);
         _ent = await Entitlements.CurrentAsync();
+        _ops = await OpsRepo.GetAsync(Ctx.TenantId);
     }
 }

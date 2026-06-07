@@ -99,6 +99,19 @@ internal sealed class RegisterConfiguration : IEntityTypeConfiguration<Register>
     }
 }
 
+internal sealed class OpsSettingsConfiguration : IEntityTypeConfiguration<OpsSettings>
+{
+    public void Configure(EntityTypeBuilder<OpsSettings> b)
+    {
+        b.ToTable("ops_settings");
+        b.HasKey(o => o.Id);
+        b.Property(o => o.Id).HasColumnName("id");
+        b.Property(o => o.TenantId).HasColumnName("tenant_id").IsRequired();
+        b.Property(o => o.SecondBackupLocation).HasColumnName("second_backup_location").HasMaxLength(512);
+        b.HasIndex(o => o.TenantId).IsUnique().HasDatabaseName("ux_ops_settings_tenant");
+    }
+}
+
 internal sealed class PrinterProfileConfiguration : IEntityTypeConfiguration<PrinterProfile>
 {
     public void Configure(EntityTypeBuilder<PrinterProfile> b)

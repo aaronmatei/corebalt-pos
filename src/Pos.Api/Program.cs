@@ -98,6 +98,20 @@ builder.Services.AddSingleton(new Pos.Application.Cash.CashOfficeOptions
 {
     VarianceAckThreshold = decimal.TryParse(builder.Configuration["Cash:VarianceAckThreshold"], out var vt) ? vt : 500m,
 });
+
+// Backups: daily scheduled pg_dump + on-demand + restore (bundled portable Postgres tools).
+builder.Services.AddSingleton(new Pos.Application.Ops.BackupOptions
+{
+    ConnectionString = conn,
+    PgDumpPath = builder.Configuration["Ops:PgDumpPath"] ?? "pg_dump",
+    BackupDirectory = backupDirectory,
+    RetentionDays = int.TryParse(builder.Configuration["Backup:RetentionDays"], out var brd) ? brd : 14,
+    DailyTimeLocal = TimeOnly.TryParse(builder.Configuration["Backup:DailyTime"], out var bdt) ? bdt : new TimeOnly(22, 30),
+    StaleHours = int.TryParse(builder.Configuration["Backup:StaleHours"], out var bsh) ? bsh : 48,
+});
+builder.Services.AddScoped<Pos.Application.Ops.IBackupService, Pos.Infrastructure.Ops.BackupManager>();
+if (!builder.Environment.IsEnvironment("Testing"))
+    builder.Services.AddHostedService<Pos.Infrastructure.Ops.BackupScheduler>(); // tests drive backups directly
 builder.Services.AddSingleton(new ReceiptNumberFormatter(builder.Configuration["Receipt:NumberPrefix"] ?? "POS"));
 builder.Services.AddScoped<SaleCompletion>();
 
@@ -253,6 +267,7 @@ v1.MapMpesa();
 v1.MapInventory();
 v1.MapTenancy();
 v1.MapCash();
+v1.MapBackups();
 
 app.MapAuth();   // /api/v1/auth/* (login + pin-login anonymous; change-password authorized)
 app.MapUsers();  // /api/v1/users (Manager only)

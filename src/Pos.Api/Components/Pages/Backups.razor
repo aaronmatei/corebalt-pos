@@ -1,0 +1,85 @@
+@page "/backups"
+@attribute [Authorize(Policy = "BackOfficeManager")]
+@using Pos.Application.Ops
+@inject IBackupService BackupSvc
+
+<h1>Backups</h1>
+
+@if (!string.IsNullOrEmpty(Saved)) { <p style="color:var(--accent)">@Saved</p> }
+@if (!string.IsNullOrEmpty(Error)) { <p class="error">@Error</p> }
+
+<div class="card">
+    <h2>Health</h2>
+    @if (_health is not null)
+    {
+        @foreach (var w in _health.Warnings)
+        {
+            <p class="error" style="margin:4px 0">&#9888; @w</p>
+        }
+        @if (_health.Warnings.Count == 0) { <p style="color:var(--accent)">&#10003; Backups are healthy.</p> }
+
+        <p style="color:var(--muted)">
+            Last backup:
+            @if (_health.Last is { } l)
+            {
+                <strong>@Eat(l.CreatedUtc)</strong> <span>· @Size(l.SizeBytes) · @(l.Verified ? "verified" : "UNVERIFIED") · @l.Reason</span>
+            }
+            else { <strong>none yet</strong> }
+        </p>
+        <p style="color:var(--muted)">
+            Off-machine copy:
+            @if (_health.OffsiteConfigured) { <span>@_health.SecondLocation — @(_health.OffsiteHealthy ? "OK" : "FAILING")</span> }
+            else { <span>not set (configure it in <a href="/settings">Settings</a>)</span> }
+        </p>
+    }
+    <form method="post" action="/backoffice/backups/now" style="margin-top:8px">
+        <Csrf /><button type="submit" class="accent">Back up now</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2>Backups on this machine</h2>
+    <table>
+        <thead><tr><th>File</th><th>When</th><th>Size</th><th>Verified</th><th>Reason</th><th>Off-machine</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var b in _list)
+            {
+                <tr>
+                    <td style="font-family:monospace;font-size:12px">@b.FileName</td>
+                    <td>@Eat(b.CreatedUtc)</td>
+                    <td style="text-align:right">@Size(b.SizeBytes)</td>
+                    <td>@(b.Verified ? "yes" : "—")</td>
+                    <td>@b.Reason</td>
+                    <td>@(b.OffsiteCopied ? "copied" : "—")</td>
+                    <td>
+                        <form method="post" action="/backoffice/backups/restore"
+                              onsubmit="return confirm('RESTORE this backup? Current data will be replaced. A safety backup is taken first.');">
+                            <Csrf />
+                            <input type="hidden" name="fileName" value="@b.FileName" />
+                            <button type="submit">Restore</button>
+                        </form>
+                    </td>
+                </tr>
+            }
+            @if (_list.Count == 0) { <tr><td colspan="7" style="color:var(--muted)">No backups yet.</td></tr> }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [SupplyParameterFromQuery] public string? Saved { get; set; }
+    [SupplyParameterFromQuery] public string? Error { get; set; }
+
+    private BackupHealth? _health;
+    private IReadOnlyList<BackupRecord> _list = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _list = await BackupSvc.ListAsync();
+        _health = await BackupSvc.GetHealthAsync();
+    }
+
+    private static string Eat(DateTimeOffset utc) =>
+        utc.ToOffset(TimeSpan.FromHours(3)).ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+    private static string Size(long bytes) => bytes >= 1048576 ? $"{bytes / 1048576.0:0.0} MB" : $"{bytes / 1024.0:0} KB";
+}

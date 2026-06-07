@@ -5,6 +5,18 @@ using Pos.Domain.Tenancy;
 
 namespace Pos.Infrastructure.Persistence.Repositories;
 
+internal sealed class OpsSettingsRepository : IOpsSettingsRepository
+{
+    private readonly PosDbContext _db;
+    public OpsSettingsRepository(PosDbContext db) => _db = db;
+
+    public Task<OpsSettings?> GetAsync(Guid tenantId, CancellationToken ct = default) =>
+        _db.OpsSettings.FirstOrDefaultAsync(o => o.TenantId == tenantId, ct);
+
+    public async Task AddAsync(OpsSettings settings, CancellationToken ct = default) =>
+        await _db.OpsSettings.AddAsync(settings, ct);
+}
+
 internal sealed class RegisterRepository : IRegisterRepository
 {
     private readonly PosDbContext _db;

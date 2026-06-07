@@ -14,19 +14,31 @@ public sealed class SettingsService
     private readonly IMpesaSettingsRepository _mpesa;
     private readonly IEtimsSettingsRepository _etims;
     private readonly IEntitlementsRepository _entitlements;
+    private readonly IOpsSettingsRepository _opsSettings;
     private readonly ILicenseVerifier _licenses;
     private readonly IClock _clock;
     private readonly IUnitOfWork _uow;
 
     public SettingsService(IMpesaSettingsRepository mpesa, IEtimsSettingsRepository etims,
-        IEntitlementsRepository entitlements, ILicenseVerifier licenses, IClock clock, IUnitOfWork uow)
+        IEntitlementsRepository entitlements, IOpsSettingsRepository opsSettings, ILicenseVerifier licenses,
+        IClock clock, IUnitOfWork uow)
     {
         _mpesa = mpesa;
         _etims = etims;
         _entitlements = entitlements;
+        _opsSettings = opsSettings;
         _licenses = licenses;
         _clock = clock;
         _uow = uow;
+    }
+
+    /// <summary>Set the off-machine backup copy location (external drive / network share).</summary>
+    public async Task UpdateSecondBackupLocationAsync(Guid tenantId, string? path, CancellationToken ct = default)
+    {
+        var ops = await _opsSettings.GetAsync(tenantId, ct);
+        if (ops is null) { ops = OpsSettings.Create(tenantId); await _opsSettings.AddAsync(ops, ct); }
+        ops.SetSecondBackupLocation(path);
+        await _uow.SaveChangesAsync(ct);
     }
 
     public async Task UpdateMpesaAsync(Guid tenantId, bool enabled, string shortCode, string consumerKey,

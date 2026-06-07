@@ -77,6 +77,7 @@ public static class DependencyInjection
         services.AddScoped<IEtimsSettingsRepository, EtimsSettingsRepository>();
         services.AddScoped<IEntitlementsRepository, EntitlementsRepository>();
         services.AddScoped<IRegisterRepository, RegisterRepository>();
+        services.AddScoped<IOpsSettingsRepository, OpsSettingsRepository>();
         services.AddScoped<IEntitlements, EntitlementsService>();
 
         // Cash management + close-of-day: register shifts, drawer movements, X/Z report projections.

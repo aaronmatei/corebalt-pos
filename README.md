@@ -444,6 +444,24 @@ store server runs headless as a **Windows Service**; both apps publish **self-co
 the packages with `deploy/publish-server.ps1` + `deploy/publish-till.ps1`; see **`deploy/README.md`**
 for install, config, ports and the service command. (The MSI installer + scheduled backups come next.)
 
+## Backups & restore (deployment part 3)
+
+Uses the bundled portable `pg_dump`/`pg_restore`.
+
+- **Automatic daily backup:** a background service runs `pg_dump -Fc` (compressed, custom format) at a
+  configurable time (default end-of-day) to the per-install backups folder, plus an on-demand **Back up
+  now** button (Manager) in the back-office.
+- **Verified:** every dump is integrity-checked with `pg_restore --list` and flagged verified.
+- **Off-machine copy (critical):** each backup is copied to a configurable second location (external drive
+  / network share) set in back-office **Settings** — health warns loudly if it's unset or failing.
+- **Retention:** keep N days (default 14), prune older; pre-migration/safety dumps are kept.
+- **Health (no silent failures):** the back-office **Backups** page shows the last backup time/size/verified
+  flag/location and raises a warning if there's been no successful backup in 48h or the off-machine copy
+  is unset/failing.
+- **Restore (destructive, Manager-gated):** one action that (1) takes a safety backup of the current state
+  first, (2) closes app connections, (3) `pg_restore --clean`s the chosen backup (local or staged from the
+  off-machine copy). API: `POST /api/v1/backups`, `GET /api/v1/backups[/health]`, `POST /api/v1/backups/restore`.
+
 ## Roadmap (anticipated in design choices)
 - Single-store supermarket: S1 multi-lane foundation, S2 weighed goods + scales, S3 cash office,
   S4 promotions + loyalty, S5 procurement.

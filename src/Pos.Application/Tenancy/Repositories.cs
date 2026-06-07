@@ -34,3 +34,9 @@ public interface IRegisterRepository
     /// number/name ("Lane N"). Added to the unit of work; the caller's SaveChanges commits it.</summary>
     Task<Register> GetOrCreateAsync(Guid tenantId, Guid storeId, Guid registerId, CancellationToken ct = default);
 }
+
+public interface IOpsSettingsRepository
+{
+    Task<OpsSettings?> GetAsync(Guid tenantId, CancellationToken ct = default);
+    Task AddAsync(OpsSettings settings, CancellationToken ct = default);
+}
