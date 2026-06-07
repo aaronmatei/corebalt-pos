@@ -42,6 +42,29 @@ var logDirectory = OpsPath("Ops:LogDirectory", "logs");
 var backupDirectory = OpsPath("Ops:BackupDirectory", "backups");
 var dataProtectionKeysPath = OpsPath("Ops:DataProtectionKeysPath", "dp-keys");
 
+// pg_dump/pg_restore live next to this path. The installer sets Ops:PgDumpPath to the bundled portable
+// Postgres; when unset (dev, or an install that forgot it) auto-discover the newest installed pg_dump so
+// backups/restore work, falling back to "pg_dump" on PATH.
+var pgDumpPath = ResolvePgDumpPath(builder.Configuration["Ops:PgDumpPath"]);
+
+static string ResolvePgDumpPath(string? configured)
+{
+    if (!string.IsNullOrWhiteSpace(configured)) return configured;
+    try
+    {
+        foreach (var folder in new[] { Environment.SpecialFolder.ProgramFiles, Environment.SpecialFolder.ProgramFilesX86 })
+        {
+            var root = Path.Combine(Environment.GetFolderPath(folder), "PostgreSQL");
+            if (!Directory.Exists(root)) continue;
+            var found = Directory.GetFiles(root, "pg_dump.exe", SearchOption.AllDirectories)
+                .OrderBy(p => p, StringComparer.OrdinalIgnoreCase).LastOrDefault(); // newest version dir wins
+            if (found is not null) return found;
+        }
+    }
+    catch { /* discovery is best-effort */ }
+    return "pg_dump"; // rely on PATH (Linux dev / explicitly installed)
+}
+
 // ── Structured rolling file logs (Serilog) for remote support, plus console for dev/SCM ──
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
@@ -103,7 +126,7 @@ builder.Services.AddSingleton(new Pos.Application.Cash.CashOfficeOptions
 builder.Services.AddSingleton(new Pos.Application.Ops.BackupOptions
 {
     ConnectionString = conn,
-    PgDumpPath = builder.Configuration["Ops:PgDumpPath"] ?? "pg_dump",
+    PgDumpPath = pgDumpPath,
     BackupDirectory = backupDirectory,
     RetentionDays = int.TryParse(builder.Configuration["Backup:RetentionDays"], out var brd) ? brd : 14,
     DailyTimeLocal = TimeOnly.TryParse(builder.Configuration["Backup:DailyTime"], out var bdt) ? bdt : new TimeOnly(22, 30),
@@ -224,8 +247,7 @@ else if (app.Configuration.GetValue("Ops:AutoMigrate", true))
     using var scope = app.Services.CreateScope();
     var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
     var db = scope.ServiceProvider.GetRequiredService<PosDbContext>();
-    var backup = new PgDumpBackup(conn, backupDirectory,
-        app.Configuration["Ops:PgDumpPath"] ?? "pg_dump", loggerFactory.CreateLogger("Backup"));
+    var backup = new PgDumpBackup(conn, backupDirectory, pgDumpPath, loggerFactory.CreateLogger("Backup"));
     try
     {
         await StartupMigrator.RunAsync(db, backup, Path.Combine(contentRoot, "schema-version.json"),

@@ -122,7 +122,7 @@ Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Databa
   Production, bound `0.0.0.0:5081`, backed-up-then-migrated a one-behind populated DB, a LAN client reached
   the API. See `deploy/README.md`.
 - **Backups + restore (deployment part 3; `Pos.Application/Ops` + `Pos.Infrastructure/Ops/BackupManager`):**
-  uses the bundled portable `pg_dump`/`pg_restore`. `BackupScheduler` (hosted) runs a daily `pg_dump -Fc`
+  uses the bundled portable `pg_dump`/`pg_restore` (path from `Ops:PgDumpPath`, or auto-discovered from the installed Postgres when unset — e.g. dev). `BackupScheduler` (hosted) runs a daily `pg_dump -Fc`
   at `Backup:DailyTime` (default 22:30) to `Ops:BackupDirectory`; **Back up now** (Manager) does it on
   demand. Each dump is **integrity-checked** (`pg_restore --list` → `Verified`), **copied off-machine** to
   the DB-backed `OpsSettings.SecondBackupLocation` (a back-office **Settings** field — health warns if
