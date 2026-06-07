@@ -1,0 +1,88 @@
+@page "/reorder"
+@attribute [Authorize(Policy = "BackOfficeManager")]
+@inject Pos.Application.Inventory.LowStockService LowStock
+@inject Pos.Application.Notifications.NotificationFeedService Feed
+
+<h1>Reorder &amp; low-stock</h1>
+<p style="color:var(--muted);margin-top:0">Active products at or below their reorder level — your reorder worklist. On-hand is derived from stock movements; set reorder levels on each product's edit page.</p>
+
+<div class="card">
+    <h2>Needs reordering (@_worklist.Count)</h2>
+    <table>
+        <thead>
+            <tr><th>Product</th><th>SKU</th><th>Unit</th><th style="text-align:right">On hand</th><th style="text-align:right">Reorder level</th><th style="text-align:right">Suggested order</th><th></th></tr>
+        </thead>
+        <tbody>
+            @foreach (var r in _worklist)
+            {
+                <tr>
+                    <td>@r.Name</td>
+                    <td>@r.Sku</td>
+                    <td>@r.Unit</td>
+                    <td style="text-align:right">@Num(r.OnHand)</td>
+                    <td style="text-align:right">@Num(r.ReorderLevel)</td>
+                    <td style="text-align:right">@(r.SuggestedOrderQty is { } q ? Num(q) : "—")</td>
+                    <td><a href="@($"/products/{r.ProductId}")">Edit</a></td>
+                </tr>
+            }
+            @if (_worklist.Count == 0)
+            {
+                <tr><td colspan="7" style="color:var(--muted)">Everything is above its reorder level. 🎉</td></tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+        <h2 style="margin:0">Alerts feed @(_unread > 0 ? $"({_unread} unread)" : "")</h2>
+        @if (_unread > 0)
+        {
+            <form method="post" action="/backoffice/notifications/read-all">
+                <Csrf /><button type="submit" class="btn ghost">Mark all read</button>
+            </form>
+        }
+    </div>
+    <table style="margin-top:10px">
+        <thead><tr><th>When</th><th>Alert</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var n in _feed)
+            {
+                <tr class="@(n.IsRead ? "" : "")" style="@(n.IsRead ? "color:var(--muted)" : "font-weight:600")">
+                    <td style="white-space:nowrap">@Eat(n.CreatedAtUtc)</td>
+                    <td>@n.Title — <span style="font-weight:400">@n.Message</span></td>
+                    <td>
+                        @if (!n.IsRead)
+                        {
+                            <form method="post" action="@($"/backoffice/notifications/{n.Id}/read")">
+                                <Csrf /><button type="submit" class="btn ghost">Mark read</button>
+                            </form>
+                        }
+                    </td>
+                </tr>
+            }
+            @if (_feed.Count == 0)
+            {
+                <tr><td colspan="3" style="color:var(--muted)">No alerts yet.</td></tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    private IReadOnlyList<Pos.Application.Inventory.LowStockLine> _worklist = [];
+    private IReadOnlyList<Pos.Domain.Notifications.Notification> _feed = [];
+    private int _unread;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _worklist = await LowStock.GetWorklistAsync();
+        _feed = await Feed.ListAsync(unreadOnly: false, limit: 100);
+        _unread = await Feed.UnreadCountAsync();
+    }
+
+    private static string Num(decimal d) => d.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string Eat(DateTimeOffset utc) =>
+        utc.ToOffset(TimeSpan.FromHours(3)).ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+}

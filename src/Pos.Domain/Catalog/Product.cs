@@ -36,6 +36,25 @@ public sealed class Product : AggregateRoot, ITenantScoped, IStoreScoped
     /// reference (no navigation), keeping the catalogue aggregate boundary clean like the other ids.
     /// </summary>
     public Guid? CategoryId { get; private set; }
+
+    /// <summary>
+    /// Reorder (low-stock) threshold. When set, the product is "low" once on-hand (SUM of movements)
+    /// falls to/below this. Null = not tracked. Decimal so weighed goods work (e.g. 2.5 kg). Product-level
+    /// for the single store today; in multi-branch this becomes per-(store, product) — the door is left
+    /// open (no per-store table yet).
+    /// </summary>
+    public decimal? ReorderLevel { get; private set; }
+
+    /// <summary>Suggested quantity to order when low (a reorder/"par" top-up). Null = no suggestion.</summary>
+    public decimal? ReorderQuantity { get; private set; }
+
+    /// <summary>
+    /// Notification bookkeeping ONLY (never the low-stock status, which is always DERIVED from movements):
+    /// true once a ProductLowStock event has fired for the current dip, so we alert ONCE per dip and not on
+    /// every subsequent sale. Cleared when on-hand is lifted back above the level, arming the next dip.
+    /// </summary>
+    public bool LowStockNotified { get; private set; }
+
     public bool IsActive { get; private set; }
 
     private Product() { } // EF
@@ -83,6 +102,43 @@ public sealed class Product : AggregateRoot, ITenantScoped, IStoreScoped
 
     /// <summary>Move the product into a category (or clear it — null = Uncategorized).</summary>
     public void AssignCategory(Guid? categoryId) => CategoryId = categoryId;
+
+    /// <summary>
+    /// Set (or clear) the reorder threshold + suggested order quantity. Changing the settings re-arms
+    /// notification (clears <see cref="LowStockNotified"/>) so the next stock movement re-evaluates against
+    /// the new level — an item left below a freshly-set level alerts again on its next dip.
+    /// </summary>
+    public void SetReorderSettings(decimal? reorderLevel, decimal? reorderQuantity)
+    {
+        if (reorderLevel is < 0) throw new ArgumentOutOfRangeException(nameof(reorderLevel), "Reorder level cannot be negative.");
+        if (reorderQuantity is < 0) throw new ArgumentOutOfRangeException(nameof(reorderQuantity), "Reorder quantity cannot be negative.");
+        ReorderLevel = reorderLevel;
+        ReorderQuantity = reorderLevel is null ? null : reorderQuantity; // no suggestion without a level
+        LowStockNotified = false;
+    }
+
+    /// <summary>
+    /// Evaluate the reorder state against the product's NEW on-hand (caller supplies on-hand AFTER the
+    /// movement). Fires <see cref="ProductLowStock"/> ONCE per dip — when on-hand sits at/below the level
+    /// and we haven't already notified for this dip — and clears the notified flag when on-hand recovers
+    /// above the level (arming the next dip). A no-op when the product isn't tracked (no reorder level).
+    /// The event is drained to the outbox by the same SaveChanges that records the movement.
+    /// </summary>
+    public void EvaluateReorder(decimal onHand)
+    {
+        if (ReorderLevel is not { } level) return; // not tracked
+
+        if (onHand <= level)
+        {
+            if (LowStockNotified) return; // already alerted for this dip — don't re-notify on further sales
+            LowStockNotified = true;
+            Raise(new ProductLowStock(Id, TenantId, StoreId, Sku, Name, onHand, level, ReorderQuantity, UnitOfMeasure));
+        }
+        else if (LowStockNotified)
+        {
+            LowStockNotified = false; // recovered above the level — re-arm for the next dip
+        }
+    }
 
     /// <summary>
     /// Change the price. Never silent: a real change RAISES <see cref="ProductPriceChanged"/> (drained

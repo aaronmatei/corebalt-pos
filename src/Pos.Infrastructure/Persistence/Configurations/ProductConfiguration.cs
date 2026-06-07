@@ -20,6 +20,9 @@ internal sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
         b.Property(p => p.UnitOfMeasure).HasColumnName("unit_of_measure").HasConversion<int>();
         b.Property(p => p.TaxClass).HasColumnName("tax_class").HasConversion<int>();
         b.Property(p => p.CategoryId).HasColumnName("category_id");
+        b.Property(p => p.ReorderLevel).HasColumnName("reorder_level").HasColumnType("numeric(18,3)");
+        b.Property(p => p.ReorderQuantity).HasColumnName("reorder_quantity").HasColumnType("numeric(18,3)");
+        b.Property(p => p.LowStockNotified).HasColumnName("low_stock_notified");
         b.Property(p => p.IsActive).HasColumnName("is_active");
 
         b.OwnsOne(p => p.Price, m =>

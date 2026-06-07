@@ -23,6 +23,14 @@ internal static class InventoryEndpoints
             return Results.Ok(new StockReportResponse(rows));
         });
 
+        // The reorder worklist: active products at/below their reorder level (derived from movements).
+        mgr.MapGet("/low-stock", async (LowStockService svc, CancellationToken ct) =>
+        {
+            var rows = (await svc.GetWorklistAsync(ct))
+                .Select(r => new LowStockRow(r.ProductId, r.Sku, r.Name, r.Unit, r.OnHand, r.ReorderLevel, r.SuggestedOrderQty)).ToList();
+            return Results.Ok(new LowStockResponse(rows.Count, rows));
+        });
+
         mgr.MapPost("/receive", async (ReceiveStockRequest req, StockService svc, CancellationToken ct) =>
         {
             var result = await svc.ReceiveAsync(req.ProductId, req.Quantity, req.Reason, req.Reference, ct);

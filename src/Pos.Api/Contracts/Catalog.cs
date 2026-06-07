@@ -18,7 +18,9 @@ public sealed record UpdateProductRequest(
     UnitOfMeasure UnitOfMeasure,
     TaxClass TaxClass,
     bool IsActive,
-    Guid? CategoryId = null);
+    Guid? CategoryId = null,
+    decimal? ReorderLevel = null,
+    decimal? ReorderQuantity = null);
 
 public sealed record RepriceProductRequest(decimal Amount, string Currency);
 
@@ -33,7 +35,9 @@ public sealed record ProductResponse(
     bool IsActive,
     string? Barcode,
     TaxClass TaxClass,
-    Guid? CategoryId);
+    Guid? CategoryId,
+    decimal? ReorderLevel,
+    decimal? ReorderQuantity);
 
 // ── Categories (tenant-scoped master data) ──
 public sealed record CreateCategoryRequest(string Name, Guid? ParentId = null, int DisplayOrder = 0);

@@ -6,6 +6,7 @@ using Pos.Application.Abstractions;
 using Pos.Application.Catalog;
 using Pos.Application.Identity;
 using Pos.Application.Inventory;
+using Pos.Application.Notifications;
 using Pos.Application.Tenancy;
 using Pos.Domain.Catalog;
 using Pos.Domain.Identity;
@@ -111,12 +112,13 @@ internal static class BackOfficeEndpoints
 
         g.MapPost("/products/{id:guid}", async (Guid id, ProductService svc,
             [FromForm] string name, [FromForm] string? barcode, [FromForm] string unit,
-            [FromForm] string taxClass, [FromForm] string? isActive, [FromForm] string? categoryId, CancellationToken ct) =>
+            [FromForm] string taxClass, [FromForm] string? isActive, [FromForm] string? categoryId,
+            [FromForm] decimal? reorderLevel, [FromForm] decimal? reorderQuantity, CancellationToken ct) =>
         {
             try
             {
                 await svc.UpdateAsync(id, name, barcode, Parse<UnitOfMeasure>(unit), Parse<TaxClass>(taxClass),
-                    isActive == "true", ParseGuid(categoryId), ct);
+                    isActive == "true", ParseGuid(categoryId), reorderLevel, reorderQuantity, ct);
                 return Results.Redirect("/products");
             }
             catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return Back($"/products/{id}", ex); }
@@ -150,6 +152,19 @@ internal static class BackOfficeEndpoints
                 await svc.RepriceAsync(id, new Money(amount, currency), ct); return Results.Redirect($"/products/{id}");
             }
             catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return Back($"/products/{id}", ex); }
+        }).RequireAuthorization("BackOfficeManager");
+
+        // ── Notifications (in-app feed: acknowledge) ──
+        g.MapPost("/notifications/{id:guid}/read", async (Guid id, NotificationFeedService feed, CancellationToken ct) =>
+        {
+            await feed.MarkReadAsync(id, ct);
+            return Results.Redirect("/reorder");
+        }).RequireAuthorization("BackOfficeManager");
+
+        g.MapPost("/notifications/read-all", async (NotificationFeedService feed, CancellationToken ct) =>
+        {
+            await feed.MarkAllReadAsync(ct);
+            return Results.Redirect("/reorder");
         }).RequireAuthorization("BackOfficeManager");
 
         // ── Stock ──

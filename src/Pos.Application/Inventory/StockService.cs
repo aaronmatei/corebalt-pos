@@ -57,11 +57,18 @@ public sealed class StockService
 
     private async Task<(StockMovement, decimal)?> AppendAsync(Guid productId, decimal delta, StockMovementReason reason, string? reference, CancellationToken ct)
     {
-        if (await _products.GetAsync(_ctx.TenantId, _ctx.StoreId, productId, ct) is null) return null;
+        var product = await _products.GetAsync(_ctx.TenantId, _ctx.StoreId, productId, ct);
+        if (product is null) return null;
         var movement = StockMovement.Record(_ctx.TenantId, _ctx.StoreId, productId, delta, reason, sourceRef: null, reference: reference);
         await _stock.AddAsync(movement, ct);
         await _uow.SaveChangesAsync(ct);
+
+        // Re-evaluate against the new on-hand: a receipt that lifts stock back above the level clears the
+        // notified flag (arming the next dip); a downward adjustment can itself trip the alert. The tracked
+        // product's event (if any) drains on the second save.
         var onHand = await _stock.GetOnHandAsync(_ctx.TenantId, _ctx.StoreId, productId, ct);
+        product.EvaluateReorder(onHand);
+        await _uow.SaveChangesAsync(ct);
         return (movement, onHand);
     }
 }

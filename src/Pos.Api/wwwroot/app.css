@@ -24,9 +24,10 @@ a:hover { text-decoration: underline; }
 .sidebar .brand { display: flex; align-items: center; gap: 10px; padding: 6px 18px 18px; font-size: 18px; font-weight: 700; color: #fff; }
 .sidebar .brand .logo { width: 26px; height: 26px; }
 .sidebar nav { display: flex; flex-direction: column; gap: 2px; padding: 0 10px; }
-.sidebar nav a { color: #cdd6e6; padding: 10px 12px; border-radius: 8px; }
+.sidebar nav a { color: #cdd6e6; padding: 10px 12px; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; }
 .sidebar nav a:hover { background: var(--navy-2); text-decoration: none; }
 .sidebar nav a.active { background: var(--accent); color: #fff; }
+.sidebar nav a .badge { background: #e5484d; color: #fff; border-radius: 10px; padding: 1px 8px; font-size: 12px; font-weight: 700; min-width: 20px; text-align: center; }
 .sidebar .logout { margin-top: auto; padding: 12px 16px; }
 .sidebar .logout button { width: 100%; background: transparent; color: #9fb0cc; border: 1px solid #33405f; border-radius: 8px; padding: 8px; cursor: pointer; }
 .sidebar .logout button:hover { color: #fff; border-color: var(--accent); }

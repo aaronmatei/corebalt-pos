@@ -1,4 +1,5 @@
 using Pos.Application.Abstractions;
+using Pos.Application.Catalog;
 using Pos.Application.Inventory;
 using Pos.Application.Receipts;
 using Pos.Domain.Inventory;
@@ -18,12 +19,15 @@ public sealed class SaleCompletion
     private readonly IReceiptNumberSequence _sequence;
     private readonly ReceiptNumberFormatter _formatter;
     private readonly IStockMovementRepository _stock;
+    private readonly IProductRepository _products;
 
-    public SaleCompletion(IReceiptNumberSequence sequence, ReceiptNumberFormatter formatter, IStockMovementRepository stock)
+    public SaleCompletion(IReceiptNumberSequence sequence, ReceiptNumberFormatter formatter,
+        IStockMovementRepository stock, IProductRepository products)
     {
         _sequence = sequence;
         _formatter = formatter;
         _stock = stock;
+        _products = products;
     }
 
     public async Task FinalizeAsync(Sale sale, CancellationToken ct = default)
@@ -35,5 +39,20 @@ public sealed class SaleCompletion
         var movements = sale.Lines.Select(l => StockMovement.Record(
             sale.TenantId, sale.StoreId, l.ProductId, -l.Quantity, StockMovementReason.Sale, sourceRef: sale.Id));
         await _stock.AddRangeAsync(movements, ct);
+
+        // Reorder check, in the SAME transaction as the movements: per product, on-hand AFTER this sale =
+        // current committed on-hand − quantity sold here (the movements above aren't flushed yet). A
+        // downward crossing to/below the reorder level raises ProductLowStock on the (tracked) product,
+        // which the caller's SaveChanges drains to the outbox alongside the sale — never blocking checkout.
+        var soldByProduct = sale.Lines
+            .GroupBy(l => l.ProductId)
+            .ToDictionary(g => g.Key, g => g.Sum(x => x.Quantity));
+        foreach (var (productId, quantitySold) in soldByProduct)
+        {
+            var product = await _products.GetAsync(sale.TenantId, sale.StoreId, productId, ct);
+            if (product is null) continue;
+            var onHandBefore = await _stock.GetOnHandAsync(sale.TenantId, sale.StoreId, productId, ct);
+            product.EvaluateReorder(onHandBefore - quantitySold);
+        }
     }
 }

@@ -1,4 +1,5 @@
 @inherits LayoutComponentBase
+@inject IServiceScopeFactory ScopeFactory
 
 <div class="layout">
     <AuthorizeView>
@@ -12,6 +13,13 @@
                     <NavLink href="/products" Match="NavLinkMatch.Prefix">Products</NavLink>
                     <NavLink href="/categories">Categories</NavLink>
                     <NavLink href="/stock">Stock</NavLink>
+                    <NavLink href="/reorder">
+                        Reorder
+                        @if (_lowStockCount > 0)
+                        {
+                            <span class="badge" title="@_lowStockCount items need reordering">@_lowStockCount</span>
+                        }
+                    </NavLink>
                     <NavLink href="/users">Cashiers</NavLink>
                     <NavLink href="/sessions">Sessions</NavLink>
                     <NavLink href="/day-summary">Day summary</NavLink>
@@ -29,3 +37,27 @@
         @Body
     </main>
 </div>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+    private int _lowStockCount;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // The badge is only meaningful for an authenticated manager; never let it break login/setup pages.
+        if (AuthState is null) return;
+        var state = await AuthState;
+        if (state.User.Identity?.IsAuthenticated != true) return;
+
+        // Query in an ISOLATED DI scope so the badge gets its own DbContext — sharing the request-scoped
+        // one with the page being rendered races it ("a second operation started on this context").
+        // ICurrentContext flows from the (singleton) HttpContextAccessor, so the scope still sees the claims.
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var lowStock = scope.ServiceProvider.GetRequiredService<Pos.Application.Inventory.LowStockService>();
+            _lowStockCount = await lowStock.CountAsync();
+        }
+        catch { _lowStockCount = 0; }
+    }
+}

@@ -89,6 +89,8 @@ builder.Services.AddScoped<CheckoutService>();
 builder.Services.AddScoped<Pos.Application.Catalog.ProductService>();
 builder.Services.AddScoped<Pos.Application.Catalog.CategoryService>();
 builder.Services.AddScoped<Pos.Application.Inventory.StockService>();
+builder.Services.AddScoped<Pos.Application.Inventory.LowStockService>();
+builder.Services.AddScoped<Pos.Application.Notifications.NotificationFeedService>();
 builder.Services.AddScoped<Pos.Application.Sales.ReturnService>();
 // Per-tenant integration secrets are encrypted at rest via ASP.NET Core Data Protection — wired in
 // AddInfrastructure (the install-level key ring on disk), not an appsettings key.
@@ -139,6 +141,16 @@ if (!builder.Environment.IsEnvironment("Testing"))
 builder.Services.AddSingleton(new ReceiptNumberFormatter(builder.Configuration["Receipt:NumberPrefix"] ?? "POS"));
 builder.Services.AddScoped<SaleCompletion>();
 
+// Notification channels: in-app is always on. Email/SMS are stubs whose config fields are bound here
+// (the seam — real senders drop in later, ideally reading per-client settings). Override the defaults
+// registered by AddInfrastructure.
+var emailChannel = new Pos.Infrastructure.Notifications.EmailChannelOptions();
+builder.Configuration.GetSection("Notifications:Email").Bind(emailChannel);
+builder.Services.AddSingleton(emailChannel);
+var smsChannel = new Pos.Infrastructure.Notifications.SmsChannelOptions();
+builder.Configuration.GetSection("Notifications:Sms").Bind(smsChannel);
+builder.Services.AddSingleton(smsChannel);
+
 // eTIMS: per-tenant enable/creds live in EtimsSettings (DB). Only worker tuning is host config.
 builder.Services.AddSingleton(new EtimsWorkerOptions
 {
@@ -150,6 +162,10 @@ builder.Services.AddScoped<FiscalizationService>();
 builder.Services.AddScoped<FiscalSyncService>();
 if (!builder.Environment.IsEnvironment("Testing"))
     builder.Services.AddHostedService<EtimsSyncWorker>(); // per-tenant enable checked inside; tests drive it directly
+
+// Low-stock notification dispatcher (outbox → channels). Tests drive INotificationDispatcher directly.
+if (!builder.Environment.IsEnvironment("Testing"))
+    builder.Services.AddHostedService<LowStockNotificationWorker>();
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentContext, ClaimsCurrentContext>();
@@ -292,6 +308,7 @@ v1.MapInventory();
 v1.MapTenancy();
 v1.MapCash();
 v1.MapBackups();
+v1.MapNotifications();
 
 app.MapAuth();   // /api/v1/auth/* (login + pin-login anonymous; change-password authorized)
 app.MapUsers();  // /api/v1/users (Manager only)

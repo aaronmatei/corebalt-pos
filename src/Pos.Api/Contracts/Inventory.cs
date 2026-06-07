@@ -18,3 +18,10 @@ public sealed record StockMovementResponse(
 public sealed record StockReportRow(Guid ProductId, string Sku, string Name, UnitOfMeasure UnitOfMeasure, bool IsActive, decimal OnHand);
 
 public sealed record StockReportResponse(IReadOnlyList<StockReportRow> Items);
+
+/// <summary>A reorder-worklist row: a product at/below its reorder level. On-hand derived from movements.</summary>
+public sealed record LowStockRow(
+    Guid ProductId, string Sku, string Name, UnitOfMeasure UnitOfMeasure,
+    decimal OnHand, decimal ReorderLevel, decimal? SuggestedOrderQty);
+
+public sealed record LowStockResponse(int Count, IReadOnlyList<LowStockRow> Items);

@@ -59,6 +59,17 @@ else
                     </select>
                 </div>
             </div>
+            <div class="row">
+                <div>
+                    <label>Reorder level</label>
+                    <input name="reorderLevel" type="number" step="0.001" min="0" value="@Num(_p.ReorderLevel)" placeholder="blank = not tracked" />
+                </div>
+                <div>
+                    <label>Suggested order qty</label>
+                    <input name="reorderQuantity" type="number" step="0.001" min="0" value="@Num(_p.ReorderQuantity)" placeholder="optional" />
+                </div>
+            </div>
+            <p style="color:var(--muted);margin:4px 0 0">Low-stock alerts fire when on-hand falls to/below the reorder level. Leave the level blank to stop tracking this product.</p>
             <div style="margin-top:14px"><button type="submit">Save</button> <a class="btn ghost" href="/products">Back</a></div>
         </form>
     </div>
@@ -91,6 +102,8 @@ else
         _categories = await CategorySvc.ListAsync(includeInactive: true);
         if (!IsNew) _p = await ProductSvc.GetAsync(Id);
     }
+
+    private static string Num(decimal? d) => d?.ToString("0.###", CultureInfo.InvariantCulture) ?? "";
 
     private RenderFragment UnitSelect(UnitOfMeasure current) => @<select name="unit">
         @foreach (var u in Enum.GetValues<UnitOfMeasure>())

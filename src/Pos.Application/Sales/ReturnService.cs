@@ -1,5 +1,6 @@
 using Pos.Application.Abstractions;
 using Pos.Application.Cash;
+using Pos.Application.Catalog;
 using Pos.Application.Fiscalization;
 using Pos.Application.Inventory;
 using Pos.Application.Receipts;
@@ -22,6 +23,7 @@ public sealed class ReturnService
     private readonly ISaleRepository _sales;
     private readonly ICreditNoteRepository _creditNotes;
     private readonly IStockMovementRepository _stock;
+    private readonly IProductRepository _products;
     private readonly IUnitOfWork _uow;
     private readonly IReceiptNumberSequence _sequence;
     private readonly ReceiptNumberFormatter _formatter;
@@ -31,7 +33,7 @@ public sealed class ReturnService
     private readonly IRegisterSessionRepository _sessions;
 
     public ReturnService(ICurrentContext ctx, ISaleRepository sales, ICreditNoteRepository creditNotes,
-        IStockMovementRepository stock, IUnitOfWork uow, IReceiptNumberSequence sequence,
+        IStockMovementRepository stock, IProductRepository products, IUnitOfWork uow, IReceiptNumberSequence sequence,
         ReceiptNumberFormatter formatter, IFiscalizationProvider provider,
         IEtimsSettingsRepository etims, IMerchantProfileRepository merchants, IRegisterSessionRepository sessions)
     {
@@ -39,6 +41,7 @@ public sealed class ReturnService
         _sales = sales;
         _creditNotes = creditNotes;
         _stock = stock;
+        _products = products;
         _uow = uow;
         _sequence = sequence;
         _formatter = formatter;
@@ -110,6 +113,17 @@ public sealed class ReturnService
                 sourceRef: note.Id, reference: note.ReturnNumber));
             await _stock.AddRangeAsync(movements, innerCt);
 
+            await _uow.SaveChangesAsync(innerCt);
+
+            // The reversing IN movements lifted on-hand — re-evaluate so a product that recovered above its
+            // reorder level clears the notified flag (re-arming the next dip). Same transaction.
+            foreach (var productId in note.Lines.Select(l => l.ProductId).Distinct())
+            {
+                var product = await _products.GetAsync(_ctx.TenantId, _ctx.StoreId, productId, innerCt);
+                if (product is null) continue;
+                var onHand = await _stock.GetOnHandAsync(_ctx.TenantId, _ctx.StoreId, productId, innerCt);
+                product.EvaluateReorder(onHand);
+            }
             await _uow.SaveChangesAsync(innerCt);
         }, ct);
 

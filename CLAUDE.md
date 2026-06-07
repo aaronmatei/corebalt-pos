@@ -93,7 +93,29 @@ Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Databa
   (deployment/ops app-side foundation: Windows Service host + self-contained publish + safe auto-migration),
   Inno Setup installers (store server with portable Postgres + till), and backups + restore (scheduled
   pg_dump, verify, off-machine copy, retention, guarded restore).
-  All six projects target `net10.0`; `dotnet test` is green at 121 (29 domain + 92 API).
+  All six projects target `net10.0`; `dotnet test` is green at 124 (29 domain + 95 API).
+- **Reorder-level / low-stock alerts (S5 groundwork):** `Product` gains nullable `ReorderLevel` +
+  `ReorderQuantity` (decimals, weighed-goods friendly; null level = not tracked) + a `LowStockNotified`
+  bookkeeping flag (notification dedup ONLY — "low" is always DERIVED, never stored). Product-level for the
+  single store now; per-(store, product) later (door left open). **Detection** (`LowStockService`,
+  read-side): a product is low when SUM(movements) ≤ level; the back-office reorder worklist + the home
+  badge ("N items need reordering") recompute it every read, so an item already below a freshly-set level
+  shows immediately. **Transition events**: `Product.EvaluateReorder(onHand)` is called from the single
+  movement-writing seams — `SaleCompletion` (covers checkout + M-Pesa, arithmetic before-flush),
+  `StockService` (receive/adjust), `ReturnService` (reversing INs) — and raises `ProductLowStock` to the
+  OUTBOX exactly ONCE per dip (on the downward crossing; the flag suppresses re-fires while it stays below),
+  clearing the flag when stock is lifted back above the level so the next dip re-notifies. Never blocks
+  checkout (it's an outbox row in the same tx). **Channels** (`INotificationChannel`): IN-APP is real (a
+  `Notification` feed + unread badge); `LowStockNotificationDispatcher` reads ProductLowStock outbox rows
+  (dedup by `SourceMessageId`, idempotent, independent of the HQ-sync `processed_at_utc`) and fans out to
+  every enabled channel; a background `LowStockNotificationWorker` drives it (tests drive
+  `INotificationDispatcher.RunOnceAsync` directly). **Email + SMS are stubs** — the seam + config fields
+  (`EmailChannelOptions`/`SmsChannelOptions`, bound from `Notifications:Email|Sms`; real SMTP / Africa's-
+  Talking-style gateway drop in later, ideally per-tenant), disabled until configured. API:
+  `GET /inventory/low-stock`, `GET /notifications[/count]`, `POST /notifications/{id}/read` + `/read-all`;
+  reorder fields on product PUT + the back-office product edit; `/reorder` page (worklist + feed).
+  Migration `AddReorderLevelsAndNotifications`. NOTE: the back-office badge queries in an ISOLATED DI scope
+  so it never races the page's request-scoped DbContext.
 - **Product categories (S1 groundwork):** a tenant-scoped `Category` aggregate (`Pos.Domain/Catalog`;
   Id/TenantId/Name/nullable ParentId/DisplayOrder/IsActive) — master data like Product but owned at the
   TENANT level (shared across branches; M2-ready). ParentId is nullable so the tree is FLAT today yet

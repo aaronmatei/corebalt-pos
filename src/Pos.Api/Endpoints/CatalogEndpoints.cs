@@ -51,7 +51,8 @@ internal static class CatalogEndpoints
 
         mgr.MapPut("/{id:guid}", async (Guid id, UpdateProductRequest req, ProductService svc, CancellationToken ct) =>
         {
-            var product = await svc.UpdateAsync(id, req.Name, req.Barcode, req.UnitOfMeasure, req.TaxClass, req.IsActive, req.CategoryId, ct);
+            var product = await svc.UpdateAsync(id, req.Name, req.Barcode, req.UnitOfMeasure, req.TaxClass,
+                req.IsActive, req.CategoryId, req.ReorderLevel, req.ReorderQuantity, ct);
             return product is null ? Results.NotFound() : Results.Ok(product.ToResponse());
         });
 

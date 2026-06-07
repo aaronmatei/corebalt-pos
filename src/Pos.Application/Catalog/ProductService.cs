@@ -49,7 +49,8 @@ public sealed class ProductService
     }
 
     public async Task<Product?> UpdateAsync(Guid id, string name, string? barcode, UnitOfMeasure unit,
-        TaxClass taxClass, bool isActive, Guid? categoryId = null, CancellationToken ct = default)
+        TaxClass taxClass, bool isActive, Guid? categoryId = null,
+        decimal? reorderLevel = null, decimal? reorderQuantity = null, CancellationToken ct = default)
     {
         var product = await _products.GetAsync(_ctx.TenantId, _ctx.StoreId, id, ct);
         if (product is null) return null;
@@ -60,6 +61,7 @@ public sealed class ProductService
         await ValidateCategoryAsync(categoryId, ct);
 
         product.UpdateDetails(name, bc, unit, taxClass, categoryId);
+        product.SetReorderSettings(reorderLevel, reorderQuantity);
         if (isActive) product.Reactivate(); else product.Deactivate();
         await _uow.SaveChangesAsync(ct);
         return product;

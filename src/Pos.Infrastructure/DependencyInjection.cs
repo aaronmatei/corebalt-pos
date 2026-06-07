@@ -13,7 +13,9 @@ using Pos.Application.Printing;
 using Pos.Application.Sales;
 using Pos.Application.Tenancy;
 using Pos.Infrastructure.Identity;
+using Pos.Application.Notifications;
 using Pos.Infrastructure.Mpesa;
+using Pos.Infrastructure.Notifications;
 using Pos.Infrastructure.Outbox;
 using Pos.Infrastructure.Persistence;
 using Pos.Infrastructure.Persistence.Repositories;
@@ -48,9 +50,20 @@ public static class DependencyInjection
         services.AddScoped<IStockMovementRepository, StockMovementRepository>();
         services.AddScoped<IProductRepository, ProductRepository>();
         services.AddScoped<ICategoryRepository, CategoryRepository>();
+        services.AddScoped<INotificationRepository, NotificationRepository>();
         services.AddScoped<IMpesaPaymentRepository, MpesaPaymentRepository>();
         services.AddScoped<IReceiptNumberSequence, ReceiptNumberSequence>();
         services.AddScoped<IOutboxDispatcher, OutboxDispatcher>();
+
+        // Notifications: the in-app channel is always on; Email/SMS are stubs (disabled until configured).
+        // The dispatcher reads ProductLowStock outbox rows and fans them out to every enabled channel.
+        // Default (disabled) channel options — the host may rebind these from per-client config.
+        services.AddSingleton(new EmailChannelOptions());
+        services.AddSingleton(new SmsChannelOptions());
+        services.AddScoped<INotificationChannel, InAppNotificationChannel>();
+        services.AddScoped<INotificationChannel, EmailNotificationChannel>();
+        services.AddScoped<INotificationChannel, SmsNotificationChannel>();
+        services.AddScoped<INotificationDispatcher, LowStockNotificationDispatcher>();
 
         // Lightweight identity: password hashing + user persistence (JWT issuer is wired in the host,
         // which owns the signing key config).
