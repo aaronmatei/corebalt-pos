@@ -157,8 +157,9 @@ public sealed class TenancySetupTests(PosApiFixture fx)
 
     private static async Task<Guid> Checkout(HttpClient client, Guid productId)
     {
+        var register = await client.OpenShiftAsync();
         var resp = await client.PostAsJsonAsync("/api/v1/sales/checkout", new CheckoutRequest(
-            RegisterId: Uuid7.NewGuid(),
+            RegisterId: register,
             Lines: new[] { new CheckoutLineRequest(productId, 1m) },
             Tenders: new[] { new CheckoutTenderRequest(TenderType.Cash, 200m, null) }), PosApiFixture.Json);
         resp.EnsureSuccessStatusCode();

@@ -26,10 +26,26 @@ public sealed class EscPosBuilder : IEscPosBuilder
 
     public byte[] Build(ReceiptModel m, PrinterProfile profile, byte[]? clientLogo = null, byte[]? footerMark = null)
     {
-        var cols = profile.Columns;
         using var s = new MemoryStream();
-
         Write(s, Init);
+        return BuildBody(s, m, profile, clientLogo, footerMark);
+    }
+
+    /// <summary>Wrap pre-formatted fixed-width text (X/Z report) as ESC/POS: init, text, feed, cut.</summary>
+    public byte[] BuildText(string body, PrinterProfile profile)
+    {
+        using var s = new MemoryStream();
+        Write(s, Init);
+        Write(s, AlignLeft);
+        foreach (var line in (body ?? "").Replace("\r\n", "\n").Split('\n')) Line(s, line);
+        Feed(s, profile.HasCutter ? 3 : 4);
+        if (profile.HasCutter) Write(s, Cut);
+        return s.ToArray();
+    }
+
+    private byte[] BuildBody(MemoryStream s, ReceiptModel m, PrinterProfile profile, byte[]? clientLogo, byte[]? footerMark)
+    {
+        var cols = profile.Columns;
 
         // ── Header: client logo (raster) OR bold legal name, then centered text lines ──
         Write(s, AlignCenter);

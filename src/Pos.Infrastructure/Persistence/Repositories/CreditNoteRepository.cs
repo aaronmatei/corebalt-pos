@@ -29,4 +29,18 @@ internal sealed class CreditNoteRepository : ICreditNoteRepository
             .GroupBy(l => l.ProductId)
             .ToDictionary(g => g.Key, g => g.Sum(l => l.Quantity));
     }
+
+    public async Task<IReadOnlyList<CreditNote>> ListBySessionAsync(Guid tenantId, Guid storeId, Guid sessionId, CancellationToken ct = default) =>
+        await _db.CreditNotes
+            .Where(c => c.TenantId == tenantId && c.StoreId == storeId && c.RegisterSessionId == sessionId)
+            .OrderBy(c => c.CreatedAtUtc)
+            .ToListAsync(ct);
+
+    public async Task<IReadOnlyList<CreditNote>> ListBetweenAsync(Guid tenantId, Guid storeId,
+        DateTimeOffset fromUtc, DateTimeOffset toUtc, CancellationToken ct = default) =>
+        await _db.CreditNotes
+            .Where(c => c.TenantId == tenantId && c.StoreId == storeId
+                && c.CreatedAtUtc >= fromUtc && c.CreatedAtUtc < toUtc)
+            .OrderBy(c => c.CreatedAtUtc)
+            .ToListAsync(ct);
 }

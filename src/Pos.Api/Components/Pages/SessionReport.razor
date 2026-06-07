@@ -1,0 +1,40 @@
+@page "/sessions/{Id:guid}"
+@attribute [Authorize(Policy = "BackOfficeManager")]
+@inject Pos.Application.Cash.IRegisterSessionRepository Sessions
+@inject Pos.Application.Cash.CashOfficeReportService Reports
+@inject Pos.Application.Abstractions.ICurrentContext Ctx
+
+@if (_text is null)
+{
+    <h1>Session</h1>
+    <p class="error">Session not found.</p>
+}
+else
+{
+    <h1>@_kind report — @_register</h1>
+    <div style="margin:8px 0"><a class="btn ghost" href="/sessions">Back</a>
+        <form method="post" action="@($"/backoffice/sessions/{Id}/print")" style="display:inline">
+            <Csrf /><button type="submit">Print</button>
+        </form>
+    </div>
+    <div class="card">
+        <pre style="font-family:'Courier New',monospace;font-size:13px;line-height:1.3;white-space:pre">@_text</pre>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    private string? _text;
+    private string _kind = "";
+    private string _register = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var session = await Sessions.GetAsync(Ctx.TenantId, Ctx.StoreId, Id);
+        if (session is null) return;
+        var report = await Reports.BuildAsync(session);
+        _kind = report.Kind;
+        _register = report.RegisterLabel;
+        _text = Pos.Application.Cash.ShiftReportTextRenderer.Render(report, 48);
+    }
+}

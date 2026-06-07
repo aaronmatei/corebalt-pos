@@ -59,6 +59,7 @@ public sealed class RegisterLabelTests(PosApiFixture fx)
 
     private static async Task<Guid> Checkout(HttpClient client, Guid registerId, Guid productId)
     {
+        await client.OpenShiftAsync(registerId);
         var resp = await client.PostAsJsonAsync("/api/v1/sales/checkout", new CheckoutRequest(
             RegisterId: registerId,
             Lines: new[] { new CheckoutLineRequest(productId, 1m) },

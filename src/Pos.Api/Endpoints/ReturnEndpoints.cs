@@ -18,10 +18,10 @@ internal static class ReturnEndpoints
             ReceiptOutputService output, CancellationToken ct) =>
         {
             var note = await returns.ProcessAsync(saleId, req.ReturnId, req.Reason,
-                req.Lines.Select(l => (l.ProductId, l.Quantity)).ToList(), req.RefundMethod, ct);
+                req.Lines.Select(l => (l.ProductId, l.Quantity)).ToList(), req.RefundMethod, req.RegisterId, ct);
             if (note is null) return Results.NotFound(); // original sale not in this store
 
-            await output.PrintReturnAsync(Guid.Empty, note.Id, ct); // credit notes aren't lane-bound → default profile
+            await output.PrintReturnAsync(req.RegisterId, note.Id, ct); // print on the till's profile
 
             var receipt = (await receipts.GetReturnAsync(note.Id, null, ct))!;
             return Results.Created($"/api/v1/returns/{note.Id}", new ReturnResponse(

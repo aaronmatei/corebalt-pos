@@ -65,8 +65,9 @@ public sealed class ReceiptNumberTests(PosApiFixture fx)
 
     private static async Task<ReceiptResponse> CheckoutAndGetReceipt(HttpClient client, Guid productId)
     {
+        var register = await client.OpenShiftAsync();
         var checkout = (await (await client.PostAsJsonAsync("/api/v1/sales/checkout", new CheckoutRequest(
-            RegisterId: Uuid7.NewGuid(),
+            RegisterId: register,
             Lines: new[] { new CheckoutLineRequest(productId, 1m) },
             Tenders: new[] { new CheckoutTenderRequest(TenderType.Cash, 100m, null) }), PosApiFixture.Json))
             .Content.ReadFromJsonAsync<CompleteSaleResponse>(PosApiFixture.Json))!;

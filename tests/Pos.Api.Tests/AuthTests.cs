@@ -45,8 +45,10 @@ public sealed class AuthTests(PosApiFixture fx)
         var cashier = await PinTokenAsync(staff, pin);
 
         var product = await CreateProductAsync(manager, 100m);          // Manager creates the catalogue
-        var checkout = await Bearer(cashier).PostAsJsonAsync("/api/v1/sales/checkout", new CheckoutRequest(
-            RegisterId: Uuid7.NewGuid(),
+        var till = Bearer(cashier);
+        var register = await till.OpenShiftAsync();                      // the cashier opens their own shift
+        var checkout = await till.PostAsJsonAsync("/api/v1/sales/checkout", new CheckoutRequest(
+            RegisterId: register,
             Lines: new[] { new CheckoutLineRequest(product.Id, 1m) },
             Tenders: new[] { new CheckoutTenderRequest(TenderType.Cash, 200m, null) }), PosApiFixture.Json);
         checkout.EnsureSuccessStatusCode();

@@ -23,6 +23,8 @@ public sealed class CreditNote : AggregateRoot, ITenantScoped, IStoreScoped
     public string? OriginalEtimsCuin { get; private set; }   // the original receipt's CUIN, referenced by the credit note
 
     public ReturnReason Reason { get; private set; }
+    public Guid RegisterSessionId { get; private set; } // the open shift this refund belongs to (cash-up)
+    public bool IsVoid { get; private set; }            // true when this fully reverses the original sale
     public Guid AuthorizedBy { get; private set; }
     public string AuthorizedByName { get; private set; }
     public string AuthorizedByStaffCode { get; private set; }
@@ -57,7 +59,8 @@ public sealed class CreditNote : AggregateRoot, ITenantScoped, IStoreScoped
     } // EF
 
     public static CreditNote Create(Guid id, Sale originalSale, ReturnReason reason,
-        Guid authorizedBy, string authorizedByName, string authorizedByStaffCode)
+        Guid authorizedBy, string authorizedByName, string authorizedByStaffCode,
+        Guid registerSessionId = default, bool isVoid = false)
     {
         if (id == Guid.Empty) throw new ArgumentException("A client-generated return id is required.", nameof(id));
         if (originalSale.Status != SaleStatus.Completed)
@@ -72,6 +75,8 @@ public sealed class CreditNote : AggregateRoot, ITenantScoped, IStoreScoped
             OriginalReceiptNumber = originalSale.ReceiptNumber ?? originalSale.Id.ToString(),
             OriginalEtimsCuin = originalSale.EtimsCuin,
             Reason = reason,
+            RegisterSessionId = registerSessionId,
+            IsVoid = isVoid,
             AuthorizedBy = authorizedBy,
             AuthorizedByName = authorizedByName ?? string.Empty,
             AuthorizedByStaffCode = authorizedByStaffCode ?? string.Empty,

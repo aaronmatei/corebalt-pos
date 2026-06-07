@@ -34,8 +34,9 @@ public sealed class ReceiptTests(PosApiFixture fx)
         var weighed = await CreateProduct(client, "Beef per kg", 200m, UnitOfMeasure.Kg, TaxClass.StandardRated);
 
         // Pay the lot by M-Pesa (476.00) via the async flow + fake confirmation.
+        var register = await client.OpenShiftAsync();
         var req = new MpesaCheckoutRequest(
-            RegisterId: Uuid7.NewGuid(),
+            RegisterId: register,
             Lines: new[]
             {
                 new CheckoutLineRequest(standard.Id, 1m),
@@ -103,8 +104,9 @@ public sealed class ReceiptTests(PosApiFixture fx)
         var (client, _, _, _) = fx.NewClient();
         var p = await CreateProduct(client, "Soda 500ml", 80m, UnitOfMeasure.Each, TaxClass.StandardRated);
 
+        var register = await client.OpenShiftAsync();
         var checkoutResp = await client.PostAsJsonAsync("/api/v1/sales/checkout", new CheckoutRequest(
-            RegisterId: Uuid7.NewGuid(),
+            RegisterId: register,
             Lines: new[] { new CheckoutLineRequest(p.Id, 1m) },
             Tenders: new[] { new CheckoutTenderRequest(TenderType.Cash, 100m, null) }), PosApiFixture.Json);
         var sale = (await checkoutResp.Content.ReadFromJsonAsync<CompleteSaleResponse>(PosApiFixture.Json))!;

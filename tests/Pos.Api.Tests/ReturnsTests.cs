@@ -27,11 +27,11 @@ public sealed class ReturnsTests(PosApiFixture fx)
         var (client, _, _, _) = fx.NewClient();
         var product = await CreateProduct(client, 100m);
         await Receive(client, product.Id, 10m);
-        var saleId = await Checkout(client, product.Id, 5m, cash: 500m);
+        var (saleId, register) = await Checkout(client, product.Id, 5m, cash: 500m);
         (await OnHand(client, product.Id)).Should().Be(5m);
 
         var resp = await client.PostAsJsonAsync($"/api/v1/sales/{saleId}/returns", new CreateReturnRequest(
-            ReturnId: Uuid7.NewGuid(), Reason: ReturnReason.Damaged,
+            ReturnId: Uuid7.NewGuid(), RegisterId: register, Reason: ReturnReason.Damaged,
             Lines: new[] { new ReturnLineRequest(product.Id, 2m) }, RefundMethod: RefundMethod.Cash), PosApiFixture.Json);
         resp.StatusCode.Should().Be(HttpStatusCode.Created);
         var ret = (await resp.Content.ReadFromJsonAsync<ReturnResponse>(PosApiFixture.Json))!;
@@ -56,10 +56,10 @@ public sealed class ReturnsTests(PosApiFixture fx)
         var (client, _, _, _) = fx.NewClient();
         var product = await CreateProduct(client, 100m);
         await Receive(client, product.Id, 10m);
-        var saleId = await Checkout(client, product.Id, 5m, cash: 500m);
+        var (saleId, register) = await Checkout(client, product.Id, 5m, cash: 500m);
 
         var returnId = Uuid7.NewGuid();
-        var body = new CreateReturnRequest(returnId, ReturnReason.WrongItem,
+        var body = new CreateReturnRequest(returnId, register, ReturnReason.WrongItem,
             new[] { new ReturnLineRequest(product.Id, 2m) }, RefundMethod.Cash);
 
         (await client.PostAsJsonAsync($"/api/v1/sales/{saleId}/returns", body, PosApiFixture.Json)).EnsureSuccessStatusCode();
@@ -74,10 +74,10 @@ public sealed class ReturnsTests(PosApiFixture fx)
         var (client, _, _, _) = fx.NewClient();
         var product = await CreateProduct(client, 100m);
         await Receive(client, product.Id, 10m);
-        var saleId = await Checkout(client, product.Id, 5m, cash: 500m);
+        var (saleId, register) = await Checkout(client, product.Id, 5m, cash: 500m);
 
         var resp = await client.PostAsJsonAsync($"/api/v1/sales/{saleId}/returns", new CreateReturnRequest(
-            Uuid7.NewGuid(), ReturnReason.Damaged, new[] { new ReturnLineRequest(product.Id, 6m) }, RefundMethod.Cash),
+            Uuid7.NewGuid(), register, ReturnReason.Damaged, new[] { new ReturnLineRequest(product.Id, 6m) }, RefundMethod.Cash),
             PosApiFixture.Json);
         resp.StatusCode.Should().Be(HttpStatusCode.Conflict);
         (await OnHand(client, product.Id)).Should().Be(5m, "rejected return writes nothing");
@@ -89,10 +89,10 @@ public sealed class ReturnsTests(PosApiFixture fx)
         var (client, _, _, _) = fx.NewClient();
         var product = await CreateProduct(client, 100m);
         await Receive(client, product.Id, 10m);
-        var saleId = await Checkout(client, product.Id, 5m, cash: 500m);
+        var (saleId, register) = await Checkout(client, product.Id, 5m, cash: 500m);
 
         var resp = await client.PostAsJsonAsync($"/api/v1/sales/{saleId}/returns", new CreateReturnRequest(
-            Uuid7.NewGuid(), ReturnReason.CashierError, new[] { new ReturnLineRequest(product.Id, 5m) }, RefundMethod.Cash),
+            Uuid7.NewGuid(), register, ReturnReason.CashierError, new[] { new ReturnLineRequest(product.Id, 5m) }, RefundMethod.Cash),
             PosApiFixture.Json);
         resp.StatusCode.Should().Be(HttpStatusCode.Created);
         var ret = (await resp.Content.ReadFromJsonAsync<ReturnResponse>(PosApiFixture.Json))!;
@@ -109,9 +109,9 @@ public sealed class ReturnsTests(PosApiFixture fx)
         var cashier = await PinTokenAsync(await SeedUserAsync(UserRole.Cashier));
         var supervisor = await PinTokenAsync(await SeedUserAsync(UserRole.Supervisor));
 
-        var saleId = await CheckoutAsync(Bearer(supervisor), product, 1m); // supervisor rings a sale
+        var (saleId, register) = await CheckoutAsync(Bearer(supervisor), product, 1m); // supervisor rings a sale
 
-        var body = new CreateReturnRequest(Uuid7.NewGuid(), ReturnReason.Damaged,
+        var body = new CreateReturnRequest(Uuid7.NewGuid(), register, ReturnReason.Damaged,
             new[] { new ReturnLineRequest(product, 1m) }, RefundMethod.Cash);
 
         var asCashier = await Bearer(cashier).PostAsJsonAsync($"/api/v1/sales/{saleId}/returns", body, PosApiFixture.Json);
@@ -139,14 +139,16 @@ public sealed class ReturnsTests(PosApiFixture fx)
         resp.EnsureSuccessStatusCode();
     }
 
-    private static async Task<Guid> Checkout(HttpClient client, Guid productId, decimal qty, decimal cash)
+    private static async Task<(Guid SaleId, Guid Register)> Checkout(HttpClient client, Guid productId, decimal qty, decimal cash)
     {
+        var register = await client.OpenShiftAsync();
         var resp = await client.PostAsJsonAsync("/api/v1/sales/checkout", new CheckoutRequest(
-            RegisterId: Uuid7.NewGuid(),
+            RegisterId: register,
             Lines: new[] { new CheckoutLineRequest(productId, qty) },
             Tenders: new[] { new CheckoutTenderRequest(TenderType.Cash, cash, null) }), PosApiFixture.Json);
         resp.EnsureSuccessStatusCode();
-        return (await resp.Content.ReadFromJsonAsync<CompleteSaleResponse>(PosApiFixture.Json))!.SaleId;
+        var saleId = (await resp.Content.ReadFromJsonAsync<CompleteSaleResponse>(PosApiFixture.Json))!.SaleId;
+        return (saleId, register);
     }
 
     private static async Task<decimal> OnHand(HttpClient client, Guid productId) =>
@@ -197,13 +199,15 @@ public sealed class ReturnsTests(PosApiFixture fx)
         return p.Id;
     }
 
-    private static async Task<Guid> CheckoutAsync(HttpClient client, Guid productId, decimal qty)
+    private static async Task<(Guid SaleId, Guid Register)> CheckoutAsync(HttpClient client, Guid productId, decimal qty)
     {
+        var register = await client.OpenShiftAsync();
         var resp = await client.PostAsJsonAsync("/api/v1/sales/checkout", new CheckoutRequest(
-            RegisterId: Uuid7.NewGuid(),
+            RegisterId: register,
             Lines: new[] { new CheckoutLineRequest(productId, qty) },
             Tenders: new[] { new CheckoutTenderRequest(TenderType.Cash, 100m, null) }), PosApiFixture.Json);
         resp.EnsureSuccessStatusCode();
-        return (await resp.Content.ReadFromJsonAsync<CompleteSaleResponse>(PosApiFixture.Json))!.SaleId;
+        var saleId = (await resp.Content.ReadFromJsonAsync<CompleteSaleResponse>(PosApiFixture.Json))!.SaleId;
+        return (saleId, register);
     }
 }

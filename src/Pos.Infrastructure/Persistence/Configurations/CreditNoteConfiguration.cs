@@ -18,6 +18,8 @@ internal sealed class CreditNoteConfiguration : IEntityTypeConfiguration<CreditN
         b.Property(c => c.OriginalReceiptNumber).HasColumnName("original_receipt_number").HasMaxLength(32);
         b.Property(c => c.OriginalEtimsCuin).HasColumnName("original_etims_cuin").HasMaxLength(128);
         b.Property(c => c.Reason).HasColumnName("reason").HasConversion<int>();
+        b.Property(c => c.RegisterSessionId).HasColumnName("register_session_id");
+        b.Property(c => c.IsVoid).HasColumnName("is_void");
         b.Property(c => c.AuthorizedBy).HasColumnName("authorized_by");
         b.Property(c => c.AuthorizedByName).HasColumnName("authorized_by_name").HasMaxLength(128);
         b.Property(c => c.AuthorizedByStaffCode).HasColumnName("authorized_by_staff_code").HasMaxLength(32);
@@ -76,6 +78,8 @@ internal sealed class CreditNoteConfiguration : IEntityTypeConfiguration<CreditN
         b.Property(c => c.EtimsSignedAtUtc).HasColumnName("etims_signed_at_utc").HasColumnType("timestamptz");
 
         b.HasIndex(c => new { c.TenantId, c.StoreId, c.OriginalSaleId }).HasDatabaseName("ix_credit_notes_tenant_store_sale");
+        b.HasIndex(c => new { c.TenantId, c.StoreId, c.RegisterSessionId }).HasDatabaseName("ix_credit_notes_tenant_store_session");
+        b.HasIndex(c => new { c.TenantId, c.StoreId, c.CreatedAtUtc }).HasDatabaseName("ix_credit_notes_tenant_store_created");
 
         b.Ignore(c => c.DomainEvents);
         b.Ignore(c => c.IsFiscalized);

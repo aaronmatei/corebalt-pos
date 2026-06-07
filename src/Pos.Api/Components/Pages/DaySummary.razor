@@ -1,0 +1,58 @@
+@page "/day-summary"
+@attribute [Authorize(Policy = "BackOfficeManager")]
+@inject Pos.Application.Cash.CashOfficeReportService Reports
+@inject Pos.Application.Abstractions.ICurrentContext Ctx
+
+<h1>Day sales summary</h1>
+
+<form method="get" style="margin-bottom:12px">
+    <label>Date (EAT)</label>
+    <input type="date" name="date" value="@_day" />
+    <button type="submit">Show</button>
+</form>
+
+@if (_summary is not null)
+{
+    <div class="card">
+        <p><strong>@_day</strong> — across all sessions</p>
+        <p>Transactions: <strong>@_summary.TransactionCount</strong> · Items: <strong>@_summary.ItemCount</strong>
+           · Gross: <strong>@_summary.Currency @Money(_summary.GrossSales)</strong></p>
+        <p>Returns: <strong>@_summary.ReturnsCount</strong> (@Money(_summary.ReturnsAmount))</p>
+
+        <h2>By tender</h2>
+        <table><thead><tr><th>Tender</th><th>Count</th><th style="text-align:right">Amount</th></tr></thead>
+        <tbody>
+            @foreach (var t in _summary.Tenders)
+            {
+                <tr><td>@t.Type</td><td>@t.Count</td><td style="text-align:right">@Money(t.Amount)</td></tr>
+            }
+            @if (_summary.Tenders.Count == 0) { <tr><td colspan="3" style="color:var(--muted)">No sales.</td></tr> }
+        </tbody></table>
+
+        <h2>VAT</h2>
+        <table><thead><tr><th>Class</th><th style="text-align:right">Net</th><th style="text-align:right">VAT</th></tr></thead>
+        <tbody>
+            @foreach (var v in _summary.Vat)
+            {
+                <tr><td>@v.Code @v.Label</td><td style="text-align:right">@Money(v.Net)</td><td style="text-align:right">@Money(v.Vat)</td></tr>
+            }
+        </tbody></table>
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery] public string? Date { get; set; }
+    private Pos.Application.Cash.DaySummary? _summary;
+    private string _day = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var eat = TimeSpan.FromHours(3);
+        var day = DateOnly.TryParse(Date, out var d) ? d : DateOnly.FromDateTime(DateTimeOffset.UtcNow.ToOffset(eat).Date);
+        _day = day.ToString("yyyy-MM-dd");
+        var start = new DateTimeOffset(day.Year, day.Month, day.Day, 0, 0, 0, eat);
+        _summary = await Reports.BuildDaySummaryAsync(Ctx.TenantId, Ctx.StoreId, start.ToUniversalTime(), start.AddDays(1).ToUniversalTime());
+    }
+
+    private static string Money(decimal d) => d.ToString("#,##0.00", System.Globalization.CultureInfo.InvariantCulture);
+}

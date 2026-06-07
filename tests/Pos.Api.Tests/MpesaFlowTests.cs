@@ -147,8 +147,9 @@ public sealed class MpesaFlowTests(PosApiFixture fx)
         var (client, _, _, _) = fx.NewClient();
         var product = await CreateProduct(client, 100m); // 2 × 100 = 200
 
+        var register = await client.OpenShiftAsync();
         var req = new MpesaCheckoutRequest(
-            RegisterId: Uuid7.NewGuid(),
+            RegisterId: register,
             Lines: new[] { new CheckoutLineRequest(product.Id, 2m) },
             MpesaAmount: 150m,
             PhoneNumber: "0712345678",
@@ -182,12 +183,15 @@ public sealed class MpesaFlowTests(PosApiFixture fx)
         return (await resp.Content.ReadFromJsonAsync<ProductResponse>(PosApiFixture.Json))!;
     }
 
-    private static Task<HttpResponseMessage> Initiate(HttpClient client, Guid productId, decimal mpesaAmount) =>
-        client.PostAsJsonAsync("/api/v1/sales/mpesa/checkout", new MpesaCheckoutRequest(
-            RegisterId: Uuid7.NewGuid(),
+    private static async Task<HttpResponseMessage> Initiate(HttpClient client, Guid productId, decimal mpesaAmount)
+    {
+        var register = await client.OpenShiftAsync();
+        return await client.PostAsJsonAsync("/api/v1/sales/mpesa/checkout", new MpesaCheckoutRequest(
+            RegisterId: register,
             Lines: new[] { new CheckoutLineRequest(productId, 1m) },
             MpesaAmount: mpesaAmount,
             PhoneNumber: "0712345678"), PosApiFixture.Json);
+    }
 
     private static async Task<MpesaInitiateResponse> InitiatePending(HttpClient client, Guid productId, decimal mpesaAmount)
     {

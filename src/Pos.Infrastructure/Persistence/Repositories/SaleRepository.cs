@@ -23,6 +23,23 @@ internal sealed class SaleRepository : ISaleRepository
         await _db.Sales.AddAsync(sale, ct);
     }
 
+    public async Task<IReadOnlyList<Sale>> ListBySessionAsync(Guid tenantId, Guid storeId, Guid sessionId, CancellationToken ct = default) =>
+        await _db.Sales
+            .AsSplitQuery()
+            .Where(s => s.TenantId == tenantId && s.StoreId == storeId
+                && s.RegisterSessionId == sessionId && s.Status == SaleStatus.Completed)
+            .OrderBy(s => s.CompletedAtUtc)
+            .ToListAsync(ct);
+
+    public async Task<IReadOnlyList<Sale>> ListCompletedBetweenAsync(Guid tenantId, Guid storeId,
+        DateTimeOffset fromUtc, DateTimeOffset toUtc, CancellationToken ct = default) =>
+        await _db.Sales
+            .AsSplitQuery()
+            .Where(s => s.TenantId == tenantId && s.StoreId == storeId && s.Status == SaleStatus.Completed
+                && s.CompletedAtUtc >= fromUtc && s.CompletedAtUtc < toUtc)
+            .OrderBy(s => s.CompletedAtUtc)
+            .ToListAsync(ct);
+
     public async Task<IReadOnlyList<Sale>> ListByFiscalStatusAsync(FiscalStatus status, int max, CancellationToken ct = default) =>
         await _db.Sales
             .AsSplitQuery()

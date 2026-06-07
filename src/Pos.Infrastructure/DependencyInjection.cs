@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Pos.Application.Abstractions;
+using Pos.Application.Cash;
 using Pos.Application.Catalog;
 using Pos.Application.Fiscalization;
 using Pos.Application.Identity;
@@ -74,6 +75,14 @@ public static class DependencyInjection
         services.AddScoped<IEntitlementsRepository, EntitlementsRepository>();
         services.AddScoped<IRegisterRepository, RegisterRepository>();
         services.AddScoped<IEntitlements, EntitlementsService>();
+
+        // Cash management + close-of-day: register shifts, drawer movements, X/Z report projections.
+        services.AddScoped<IRegisterSessionRepository, RegisterSessionRepository>();
+        services.AddScoped<ICashMovementRepository, CashMovementRepository>();
+        services.AddScoped<CashOfficeService>();
+        services.AddScoped<CashOfficeReportService>();
+        services.AddSingleton(new CashOfficeOptions());
+        services.AddSingleton(new Pos.Application.Receipts.ReceiptOptions()); // report VAT codes/labels (host may override)
         services.AddScoped<ISetupGuard, SetupGuard>();
         services.AddScoped<SetupService>();
         services.AddScoped<SettingsService>();

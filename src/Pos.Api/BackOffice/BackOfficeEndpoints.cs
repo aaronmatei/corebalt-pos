@@ -208,6 +208,18 @@ internal static class BackOfficeEndpoints
                 : Results.Redirect($"/settings?error={Uri.EscapeDataString(result.Error ?? "Invalid licence key.")}");
         }).RequireAuthorization("BackOfficeManager");
 
+        // Print an X/Z report on the session's register printer (reuses the ESC/POS pipeline).
+        g.MapPost("/sessions/{id:guid}/print", async (Guid id, ICurrentContext ctx,
+            Pos.Application.Cash.IRegisterSessionRepository sessions, Pos.Application.Cash.CashOfficeReportService reports,
+            Pos.Application.Printing.ReceiptOutputService output, CancellationToken ct) =>
+        {
+            var session = await sessions.GetAsync(ctx.TenantId, ctx.StoreId, id, ct);
+            if (session is null) return Results.NotFound();
+            var report = await reports.BuildAsync(session, ct);
+            await output.PrintShiftReportAsync(report.RegisterId, report, ct);
+            return Results.Redirect($"/sessions/{id}");
+        }).RequireAuthorization("BackOfficeManager");
+
         return app;
     }
 

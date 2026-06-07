@@ -27,12 +27,13 @@ Offline-first: a till/branch must keep selling when the network drops.
 ## Layout
 - `src/Pos.SharedKernel` — Entity, AggregateRoot, ValueObject, Money, Uuid7, invariant interfaces
 - `src/Pos.Domain` — Sales (Sale/SaleLine/Tender, CreditNote), Inventory (StockMovement), Catalog (Product),
-  Payments (MpesaPayment), Identity (User/UserRole), Tenancy (MerchantProfile/Branch, Mpesa/EtimsSettings, Entitlements, Register, PrinterProfile)
+  Payments (MpesaPayment), Identity (User/UserRole), Cash (RegisterSession/CashMovement), Tenancy (MerchantProfile/Branch, Mpesa/EtimsSettings, Entitlements, Register, PrinterProfile)
 - `src/Pos.Application` — ports (repositories, IUnitOfWork, IClock, **IMpesaClient**, IPasswordHasher,
   ITokenIssuer, IUserRepository) + use cases `CheckoutService`, `MpesaPaymentService`, `AuthService`,
   and `ProductService` + `StockService` (single home for product/stock orchestration, shared by the
   API and the back-office); `Receipts/`; `Fiscalization/`; `Identity/` (AuthService, StoreServerOptions, PosClaims);
-  `Tenancy/` (SetupService, SettingsService, IEntitlements); `Licensing/` (signed-licence verify/sign + codec)
+  `Tenancy/` (SetupService, SettingsService, IEntitlements); `Licensing/` (signed-licence verify/sign + codec);
+  `Cash/` (CashOfficeService open/close/movement + CashOfficeReportService X/Z + DaySummary projections)
 - `src/Pos.Infrastructure` — PosDbContext, EF configurations, repositories, outbox interceptor,
   **DarajaMpesaClient** (Mpesa/, per-tenant via MpesaSettingsResolver), **FakeEtimsProvider** (Fiscalization/),
   **JwtTokenIssuer + AspNetPasswordHasher** (Identity/), **DataProtectionSecretProtector** (Security/),
@@ -60,7 +61,7 @@ dotnet ef database update --project src/Pos.Infrastructure --startup-project sam
 dotnet run  --project samples/Pos.Persistence.Demo   # save→reload a sale, print the outbox row
 dotnet run  --project src/Pos.Api                    # store-server host on http://localhost:5080; auto-applies migrations in Development
 dotnet run  --project src/Pos.Till                   # Avalonia till (pure API client); talks to :5080
-dotnet test                                          # domain + API integration tests (97)
+dotnet test                                          # domain + API integration tests (102)
 ```
 Receipt header + currency come from the tenant's DB-backed `MerchantProfile` (set in the /setup wizard),
 NOT appsettings. A fresh install routes to `/setup`; you can't transact until provisioned. M-Pesa + eTIMS
@@ -85,8 +86,27 @@ Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Databa
   store-server process), step 11 (returns / voids / refunds — immutable credit notes), and step 12
   (per-client multi-tenant install: DB-backed merchant profile + per-tenant integration settings +
   entitlements + first-run setup wizard), and step 13 (thermal printing pipeline: per-register
-  PrinterProfile, ESC/POS builder, logo/QR rasterizer, Network/File/Null printers, PNG preview).
-  All six projects target `net10.0`; `dotnet test` is green at 97 (29 domain + 68 API).
+  PrinterProfile, ESC/POS builder, logo/QR rasterizer, Network/File/Null printers, PNG preview), and
+  step 14 (cash management + close-of-day: register shifts, drawer movements, X/Z reports).
+  All six projects target `net10.0`; `dotnet test` is green at 102 (29 domain + 73 API).
+- **Cash management + close-of-day (S3):** the spine is a `RegisterSession` (shift) per register
+  (`Pos.Domain/Cash`): OpenedBy/At + OpeningFloat → ClosedBy/At + CountedCash/ExpectedCash/Variance;
+  one OPEN session per register (filtered unique index); a closed session is an immutable end-of-day
+  fact (raises `RegisterSessionClosed` to the outbox). Sales + credit notes capture `RegisterSessionId`
+  at creation; **checkout/returns are BLOCKED with no open session** (`CheckoutService`/`MpesaPaymentService`/
+  `ReturnService` throw → 409). `CashMovement` (PayIn/PayOut/Drop, immutable, tied to the session) records
+  DRAWER events only — NOT sale cash or cash refunds (those are Tender/CreditNote facts; single source).
+  **X/Z reports are read-side projections** (`CashOfficeReportService`) over the session's facts — no
+  running counters: gross + count + items, totals BY TENDER (gross) with counts, VAT by rate, returns +
+  voids (a void = a full reversal, `CreditNote.IsVoid`). Expected drawer cash = OpeningFloat + net cash
+  sales (cash tendered − change) − cash refunds + PayIns − PayOuts − Drops (cash only; M-Pesa reported,
+  never reconciled). `CashOfficeService` opens/closes/records; a close variance beyond
+  `CashOfficeOptions.VarianceAckThreshold` (config `Cash:VarianceAckThreshold`, default 500) needs a
+  **Manager** acknowledgement. **Auth:** open/close own session Cashier+; PayIn/Out/Drop Supervisor+.
+  `POST /api/v1/sessions/{open,current,movements,{id}/report,{id}/close,{id}/print}` + `GET /sales-summary`
+  (store/day aggregate). X/Z print via the ESC/POS pipeline (`ReceiptOutputService.PrintShiftReportAsync`,
+  reuses `IReceiptPrinter`) and view in back-office (`/sessions`, `/sessions/{id}`, `/day-summary`).
+  **Pending:** the till's open-shift prompt on login (server already blocks selling without one).
 - **Thermal printing (per-register, hardware-free to build/test):** `PrinterProfile` per Register
   (`Pos.Domain/Tenancy`): Transport (Null/File/Network), PaperWidth (80mm/576 dots → 48 cols, 58mm/384 →
   32), HasCutter/HasCashDrawer/NativeQrSupported. `EscPosBuilder` (`Pos.Infrastructure/Printing`) turns

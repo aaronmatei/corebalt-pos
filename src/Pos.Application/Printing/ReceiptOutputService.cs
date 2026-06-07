@@ -1,4 +1,5 @@
 using Pos.Application.Abstractions;
+using Pos.Application.Cash;
 using Pos.Application.Receipts;
 using Pos.Application.Tenancy;
 using Pos.Domain.Tenancy;
@@ -58,6 +59,22 @@ public sealed class ReceiptOutputService
     {
         var r = await _receipts.GetReturnAsync(creditNoteId, null, ct);
         return r is null ? null : _preview.RenderPng(r.Model, ProfileFor(paper), await LoadLogoAsync(ct));
+    }
+
+    /// <summary>Print an X/Z report on the register's printer (reuses the ESC/POS + printer pipeline).</summary>
+    public async Task PrintShiftReportAsync(Guid registerId, ShiftReport report, CancellationToken ct = default)
+    {
+        var profile = await _profiles.GetByRegisterAsync(_ctx.TenantId, registerId, ct)
+            ?? PrinterProfile.Default(_ctx.TenantId, registerId);
+        try
+        {
+            var text = ShiftReportTextRenderer.Render(report, profile.Columns);
+            await _printer.PrintAsync(_builder.BuildText(text, profile), profile, ct);
+        }
+        catch
+        {
+            // A printer/transport failure must never break the cash-up — swallow it.
+        }
     }
 
     private async Task PrintAsync(Guid registerId, ReceiptModel model, CancellationToken ct)

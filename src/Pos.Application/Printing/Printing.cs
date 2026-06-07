@@ -25,6 +25,10 @@ public interface IReceiptPrinter
 public interface IEscPosBuilder
 {
     byte[] Build(ReceiptModel model, PrinterProfile profile, byte[]? clientLogo = null, byte[]? footerMark = null);
+
+    /// <summary>Wrap pre-formatted fixed-width text (e.g. an X/Z report) as ESC/POS: init, the text,
+    /// feed, then cut (only if the profile has a cutter). Reuses the same printer abstraction.</summary>
+    byte[] BuildText(string body, PrinterProfile profile);
 }
 
 /// <summary>Renders the SAME ReceiptModel to a PNG that mirrors the paper at the profile's dot width

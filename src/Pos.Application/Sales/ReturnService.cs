@@ -1,4 +1,5 @@
 using Pos.Application.Abstractions;
+using Pos.Application.Cash;
 using Pos.Application.Fiscalization;
 using Pos.Application.Inventory;
 using Pos.Application.Receipts;
@@ -27,11 +28,12 @@ public sealed class ReturnService
     private readonly IFiscalizationProvider _provider;
     private readonly IEtimsSettingsRepository _etims;
     private readonly IMerchantProfileRepository _merchants;
+    private readonly IRegisterSessionRepository _sessions;
 
     public ReturnService(ICurrentContext ctx, ISaleRepository sales, ICreditNoteRepository creditNotes,
         IStockMovementRepository stock, IUnitOfWork uow, IReceiptNumberSequence sequence,
         ReceiptNumberFormatter formatter, IFiscalizationProvider provider,
-        IEtimsSettingsRepository etims, IMerchantProfileRepository merchants)
+        IEtimsSettingsRepository etims, IMerchantProfileRepository merchants, IRegisterSessionRepository sessions)
     {
         _ctx = ctx;
         _sales = sales;
@@ -43,11 +45,13 @@ public sealed class ReturnService
         _provider = provider;
         _etims = etims;
         _merchants = merchants;
+        _sessions = sessions;
     }
 
-    /// <summary>Returns the credit note, or null if the original sale isn't found in this store.</summary>
+    /// <summary>Returns the credit note, or null if the original sale isn't found in this store. The refund
+    /// attaches to the open shift on <paramref name="registerId"/> (cash-up); requires one to be open.</summary>
     public async Task<CreditNote?> ProcessAsync(Guid originalSaleId, Guid returnId, ReturnReason reason,
-        IReadOnlyList<(Guid ProductId, decimal Quantity)> lines, RefundMethod refundMethod, CancellationToken ct = default)
+        IReadOnlyList<(Guid ProductId, decimal Quantity)> lines, RefundMethod refundMethod, Guid registerId, CancellationToken ct = default)
     {
         // Idempotent replay: a return with this client-generated id already exists → return it unchanged.
         var existing = await _creditNotes.GetAsync(_ctx.TenantId, _ctx.StoreId, returnId, ct);
@@ -60,12 +64,22 @@ public sealed class ReturnService
         if (lines is null || lines.Count == 0)
             throw new ArgumentException("At least one return line is required.", nameof(lines));
 
+        // A refund happens at a register during an open shift — attach it for cash-up.
+        var session = await _sessions.GetOpenAsync(_ctx.TenantId, _ctx.StoreId, registerId, ct)
+            ?? throw new InvalidOperationException("No open register session; open a shift before processing a refund.");
+
         var prior = await _creditNotes.GetReturnedQuantitiesAsync(_ctx.TenantId, _ctx.StoreId, originalSaleId, ct);
         var byProduct = sale.Lines
             .GroupBy(l => l.ProductId)
             .ToDictionary(g => g.Key, g => (Sold: g.Sum(x => x.Quantity), Line: g.First()));
 
-        var note = CreditNote.Create(returnId, sale, reason, _ctx.UserId, _ctx.UserName, _ctx.StaffCode);
+        // A VOID is a full reversal in one go: no prior returns, and every product returned at full qty.
+        var requested = lines.GroupBy(l => l.ProductId).ToDictionary(g => g.Key, g => g.Sum(x => x.Quantity));
+        var isVoid = prior.Count == 0
+            && requested.Count == byProduct.Count
+            && byProduct.All(kv => requested.TryGetValue(kv.Key, out var q) && q == kv.Value.Sold);
+
+        var note = CreditNote.Create(returnId, sale, reason, _ctx.UserId, _ctx.UserName, _ctx.StaffCode, session.Id, isVoid);
 
         foreach (var req in lines)
         {

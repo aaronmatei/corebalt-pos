@@ -62,6 +62,11 @@ builder.Services.AddSingleton(new Pos.Application.Printing.BrandAssets
 {
     PoweredByMark = File.Exists(markPath) ? File.ReadAllBytes(markPath) : null,
 });
+// Cash-up: a close variance beyond this (store currency) needs Manager acknowledgement.
+builder.Services.AddSingleton(new Pos.Application.Cash.CashOfficeOptions
+{
+    VarianceAckThreshold = decimal.TryParse(builder.Configuration["Cash:VarianceAckThreshold"], out var vt) ? vt : 500m,
+});
 builder.Services.AddSingleton(new ReceiptNumberFormatter(builder.Configuration["Receipt:NumberPrefix"] ?? "POS"));
 builder.Services.AddScoped<SaleCompletion>();
 
@@ -196,6 +201,7 @@ v1.MapReturns();
 v1.MapMpesa();
 v1.MapInventory();
 v1.MapTenancy();
+v1.MapCash();
 
 app.MapAuth();   // /api/v1/auth/* (login + pin-login anonymous; change-password authorized)
 app.MapUsers();  // /api/v1/users (Manager only)

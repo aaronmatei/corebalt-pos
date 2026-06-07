@@ -30,6 +30,8 @@ public sealed class PosDbContext : DbContext, IUnitOfWork
     public DbSet<Entitlements> Entitlements => Set<Entitlements>();
     public DbSet<PrinterProfile> PrinterProfiles => Set<PrinterProfile>();
     public DbSet<Register> Registers => Set<Register>();
+    public DbSet<Pos.Domain.Cash.RegisterSession> RegisterSessions => Set<Pos.Domain.Cash.RegisterSession>();
+    public DbSet<Pos.Domain.Cash.CashMovement> CashMovements => Set<Pos.Domain.Cash.CashMovement>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

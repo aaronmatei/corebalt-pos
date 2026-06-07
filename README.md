@@ -407,6 +407,29 @@ printer — everything is per-tenant/per-register config.
   (`wwwroot/assets/corebalt-mark-black-mono.png`) prints ONLY in the optional Powered-by footer.
 - Only the final on-physical-device acceptance check remains.
 
+## Cash management + close-of-day (S3)
+
+The spine is a register **shift** (`RegisterSession`); cash handling and the X/Z reports hang off it.
+Everything is immutable facts, tenant/store/register-scoped; reports are read-side projections (no
+mutable running counters).
+
+- **Shift:** open with an opening float, sell, then close (cash-up). One open session per register; a
+  closed session is a permanent end-of-day fact. **Selling requires an open session** — checkout and
+  returns are blocked (409) until a shift is opened, so the till prompts the cashier to open one.
+- **Cash movements:** `PayIn` / `PayOut` / `Drop` (Supervisor+), immutable, tied to the session. Sale
+  cash and cash refunds are NOT movements — they already exist as tender / credit-note facts.
+- **Expected drawer cash** = opening float + cash sales (net of change) − cash refunds + pay-ins −
+  pay-outs − drops. Cash only; M-Pesa and other tenders are reported but never reconciled to the drawer.
+- **X report** — a read of the current open session at any time (changes nothing). **Z report** — produced
+  on close: the same totals (by tender, VAT by rate, returns, voids) PLUS the cash reconciliation
+  (expected vs counted → variance over/short). Closing freezes counted/expected/variance and starts the
+  next session clean.
+- **Authorization:** open/close own session — Cashier+; pay-in/out/drop — Supervisor+; a close variance
+  beyond `Cash:VarianceAckThreshold` (default 500) requires a **Manager** to acknowledge it.
+- **Print / view:** X/Z print via the ESC/POS pipeline (`POST /api/v1/sessions/{id}/print`) and are
+  viewable in the back-office (`/sessions`, `/sessions/{id}`), with a store/day sales summary
+  (`/day-summary`, `GET /api/v1/sales-summary`).
+
 ## Roadmap (anticipated in design choices)
 - Single-store supermarket: S1 multi-lane foundation, S2 weighed goods + scales, S3 cash office,
   S4 promotions + loyalty, S5 procurement.

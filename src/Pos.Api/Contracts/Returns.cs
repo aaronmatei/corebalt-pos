@@ -9,6 +9,7 @@ namespace Pos.Api.Contracts;
 /// </summary>
 public sealed record CreateReturnRequest(
     Guid ReturnId,
+    Guid RegisterId,            // the till processing the refund — its open shift the refund attaches to
     ReturnReason Reason,
     IReadOnlyList<ReturnLineRequest> Lines,
     RefundMethod RefundMethod);

@@ -1,4 +1,5 @@
 using Pos.Application.Abstractions;
+using Pos.Application.Cash;
 using Pos.Application.Catalog;
 using Pos.Application.Tenancy;
 using Pos.Domain.Sales;
@@ -18,6 +19,7 @@ public sealed class CheckoutService
     private readonly ISaleRepository _sales;
     private readonly IProductRepository _products;
     private readonly IRegisterRepository _registers;
+    private readonly IRegisterSessionRepository _sessions;
     private readonly SaleCompletion _completion;
     private readonly ISetupGuard _setup;
     private readonly IUnitOfWork _uow;
@@ -27,17 +29,24 @@ public sealed class CheckoutService
         ISaleRepository sales,
         IProductRepository products,
         IRegisterRepository registers,
+        IRegisterSessionRepository sessions,
         SaleCompletion completion,
         ISetupGuard setup,
         IUnitOfWork uow)
-    { _ctx = ctx; _sales = sales; _products = products; _registers = registers; _completion = completion; _setup = setup; _uow = uow; }
+    { _ctx = ctx; _sales = sales; _products = products; _registers = registers; _sessions = sessions; _completion = completion; _setup = setup; _uow = uow; }
+
+    /// <summary>The register must have an OPEN shift to sell — otherwise the cashier opens one first.</summary>
+    private async Task<Guid> RequireOpenSessionAsync(Guid registerId, CancellationToken ct) =>
+        (await _sessions.GetOpenAsync(_ctx.TenantId, _ctx.StoreId, registerId, ct))?.Id
+        ?? throw new InvalidOperationException("No open register session; open a shift (enter the opening float) before selling.");
 
     /// <summary>Open a fresh sale on a register. Returns the sale id (UUIDv7).</summary>
     public async Task<Guid> StartAsync(Guid registerId, string currency = "KES", CancellationToken ct = default)
     {
         await _setup.EnsureConfiguredAsync(ct);
+        var sessionId = await RequireOpenSessionAsync(registerId, ct);
         var register = await _registers.GetOrCreateAsync(_ctx.TenantId, _ctx.StoreId, registerId, ct);
-        var sale = Sale.Start(_ctx.TenantId, _ctx.StoreId, registerId, _ctx.UserId, currency, _ctx.UserName, _ctx.StaffCode, register.DisplayLabel);
+        var sale = Sale.Start(_ctx.TenantId, _ctx.StoreId, registerId, _ctx.UserId, currency, _ctx.UserName, _ctx.StaffCode, register.DisplayLabel, sessionId);
         await _sales.AddAsync(sale, ct);
         await _uow.SaveChangesAsync(ct);
         return sale.Id;
@@ -104,9 +113,10 @@ public sealed class CheckoutService
         if (lines is null || lines.Count == 0)
             throw new ArgumentException("A checkout needs at least one line.", nameof(lines));
         await _setup.EnsureConfiguredAsync(ct);
+        var sessionId = await RequireOpenSessionAsync(registerId, ct);
 
         var register = await _registers.GetOrCreateAsync(_ctx.TenantId, _ctx.StoreId, registerId, ct);
-        var sale = Sale.Start(_ctx.TenantId, _ctx.StoreId, registerId, _ctx.UserId, currency, _ctx.UserName, _ctx.StaffCode, register.DisplayLabel);
+        var sale = Sale.Start(_ctx.TenantId, _ctx.StoreId, registerId, _ctx.UserId, currency, _ctx.UserName, _ctx.StaffCode, register.DisplayLabel, sessionId);
 
         foreach (var l in lines)
         {

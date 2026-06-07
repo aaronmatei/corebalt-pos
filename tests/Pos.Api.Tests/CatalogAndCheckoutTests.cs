@@ -65,8 +65,9 @@ public sealed class CatalogAndCheckoutTests(PosApiFixture fx)
         var (client, _, _, _) = fx.NewClient();
         var product = await CreateProduct(client, $"C-{Guid.NewGuid():N}"[..10], "Sugar 2kg", 250m);
 
+        var register = await client.OpenShiftAsync();
         var req = new CheckoutRequest(
-            RegisterId: Uuid7.NewGuid(),
+            RegisterId: register,
             Lines: new[] { new CheckoutLineRequest(product.Id, 2m) },     // 2 × 250 = 500
             Tenders: new[] { new CheckoutTenderRequest(TenderType.Cash, 600m, null) });
 
@@ -95,8 +96,9 @@ public sealed class CatalogAndCheckoutTests(PosApiFixture fx)
         var (client, _, _, _) = fx.NewClient();
         var product = await CreateProduct(client, $"M-{Guid.NewGuid():N}"[..10], "Cooking Oil 1L", 300m);
 
+        var register = await client.OpenShiftAsync();
         var req = new CheckoutRequest(
-            RegisterId: Uuid7.NewGuid(),
+            RegisterId: register,
             Lines: new[] { new CheckoutLineRequest(product.Id, 1m) },
             Tenders: new[] { new CheckoutTenderRequest(TenderType.Mpesa, 300m, "QABC123XYZ") });
 
@@ -116,8 +118,9 @@ public sealed class CatalogAndCheckoutTests(PosApiFixture fx)
         var (client, _, _, _) = fx.NewClient();
         var product = await CreateProduct(client, $"U-{Guid.NewGuid():N}"[..10], "Rice 5kg", 700m);
 
+        var register = await client.OpenShiftAsync();
         var req = new CheckoutRequest(
-            RegisterId: Uuid7.NewGuid(),
+            RegisterId: register,
             Lines: new[] { new CheckoutLineRequest(product.Id, 1m) },
             Tenders: new[] { new CheckoutTenderRequest(TenderType.Cash, 100m, null) }); // underpaid
 

@@ -1,4 +1,5 @@
 using Pos.Application.Abstractions;
+using Pos.Application.Cash;
 using Pos.Application.Catalog;
 using Pos.Application.Fiscalization;
 using Pos.Application.Sales;
@@ -23,6 +24,7 @@ public sealed class MpesaPaymentService
     private readonly ISaleRepository _sales;
     private readonly IProductRepository _products;
     private readonly IRegisterRepository _registers;
+    private readonly IRegisterSessionRepository _sessions;
     private readonly IMpesaPaymentRepository _payments;
     private readonly IMpesaClient _mpesa;
     private readonly SaleCompletion _completion;
@@ -33,10 +35,10 @@ public sealed class MpesaPaymentService
 
     public MpesaPaymentService(
         ICurrentContext ctx, ISaleRepository sales, IProductRepository products, IRegisterRepository registers,
-        IMpesaPaymentRepository payments, IMpesaClient mpesa, SaleCompletion completion,
+        IRegisterSessionRepository sessions, IMpesaPaymentRepository payments, IMpesaClient mpesa, SaleCompletion completion,
         FiscalizationService fiscalization, ISetupGuard setup, IClock clock, IUnitOfWork uow)
     {
-        _ctx = ctx; _sales = sales; _products = products; _registers = registers;
+        _ctx = ctx; _sales = sales; _products = products; _registers = registers; _sessions = sessions;
         _payments = payments; _mpesa = mpesa; _completion = completion;
         _fiscalization = fiscalization; _setup = setup; _clock = clock; _uow = uow;
     }
@@ -65,8 +67,10 @@ public sealed class MpesaPaymentService
         if (string.IsNullOrWhiteSpace(phoneNumber))
             throw new ArgumentException("A phone number is required for M-Pesa.", nameof(phoneNumber));
 
+        var session = await _sessions.GetOpenAsync(_ctx.TenantId, _ctx.StoreId, registerId, ct)
+            ?? throw new InvalidOperationException("No open register session; open a shift before selling.");
         var register = await _registers.GetOrCreateAsync(_ctx.TenantId, _ctx.StoreId, registerId, ct);
-        var sale = Sale.Start(_ctx.TenantId, _ctx.StoreId, registerId, _ctx.UserId, currency, _ctx.UserName, _ctx.StaffCode, register.DisplayLabel);
+        var sale = Sale.Start(_ctx.TenantId, _ctx.StoreId, registerId, _ctx.UserId, currency, _ctx.UserName, _ctx.StaffCode, register.DisplayLabel, session.Id);
 
         foreach (var l in lines)
         {

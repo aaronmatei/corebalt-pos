@@ -1,0 +1,47 @@
+@page "/sessions"
+@attribute [Authorize(Policy = "BackOfficeManager")]
+@using Pos.Domain.Cash
+@inject Pos.Application.Cash.IRegisterSessionRepository SessionRepo
+@inject Pos.Application.Abstractions.ICurrentContext Ctx
+
+<h1>Register sessions</h1>
+<p style="color:var(--muted)">Shifts opened in the last 14 days. Closed sessions are the end-of-day Z facts.</p>
+
+<div class="card">
+    <table>
+        <thead>
+            <tr><th>Register</th><th>Opened</th><th>By</th><th>Closed</th><th>Float</th><th>Counted</th><th>Variance</th><th>Status</th><th></th></tr>
+        </thead>
+        <tbody>
+            @foreach (var s in _sessions)
+            {
+                <tr>
+                    <td>@s.RegisterLabel</td>
+                    <td>@Eat(s.OpenedAtUtc)</td>
+                    <td>@s.OpenedByName</td>
+                    <td>@(s.ClosedAtUtc is { } c ? Eat(c) : "—")</td>
+                    <td style="text-align:right">@Money(s.OpeningFloat.Amount)</td>
+                    <td style="text-align:right">@(s.CountedCash is { } cc ? Money(cc.Amount) : "—")</td>
+                    <td style="text-align:right;@(s.Variance is { } v && v.Amount != 0 ? "color:#b00" : "")">
+                        @(s.Variance is { } vv ? Money(vv.Amount) : "—")
+                    </td>
+                    <td>@s.Status</td>
+                    <td><a class="btn ghost" href="@($"/sessions/{s.Id}")">Report</a></td>
+                </tr>
+            }
+            @if (_sessions.Count == 0) { <tr><td colspan="9" style="color:var(--muted)">No sessions yet.</td></tr> }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    private IReadOnlyList<RegisterSession> _sessions = [];
+
+    protected override async Task OnInitializedAsync() =>
+        _sessions = await SessionRepo.ListAsync(Ctx.TenantId, Ctx.StoreId,
+            DateTimeOffset.UtcNow.AddDays(-14), DateTimeOffset.UtcNow.AddDays(1), null);
+
+    private static string Eat(DateTimeOffset utc) =>
+        utc.ToOffset(TimeSpan.FromHours(3)).ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+    private static string Money(decimal d) => d.ToString("#,##0.00", System.Globalization.CultureInfo.InvariantCulture);
+}

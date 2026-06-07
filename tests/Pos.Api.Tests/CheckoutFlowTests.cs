@@ -29,8 +29,9 @@ public sealed class CheckoutFlowTests(PosApiFixture fx)
         product.Price.Amount.Should().Be(60m);
 
         // ── Start a sale
+        var register = await client.OpenShiftAsync();
         var startResp = await client.PostAsJsonAsync("/api/v1/sales",
-            new StartSaleRequest(RegisterId: Uuid7.NewGuid()), PosApiFixture.Json);
+            new StartSaleRequest(RegisterId: register), PosApiFixture.Json);
         startResp.StatusCode.Should().Be(HttpStatusCode.Created);
         var started = (await startResp.Content.ReadFromJsonAsync<StartSaleResponse>(PosApiFixture.Json))!;
 
@@ -118,8 +119,9 @@ public sealed class CheckoutFlowTests(PosApiFixture fx)
 
     private static async Task<Guid> StartSale(HttpClient client)
     {
+        var register = await client.OpenShiftAsync();
         var resp = await client.PostAsJsonAsync("/api/v1/sales",
-            new StartSaleRequest(RegisterId: Uuid7.NewGuid()), PosApiFixture.Json);
+            new StartSaleRequest(RegisterId: register), PosApiFixture.Json);
         resp.EnsureSuccessStatusCode();
         return (await resp.Content.ReadFromJsonAsync<StartSaleResponse>(PosApiFixture.Json))!.SaleId;
     }

@@ -24,8 +24,9 @@ public sealed class StockReceivingTests(PosApiFixture fx)
         received.OnHand.Should().Be(10m);
 
         // Sell 3 (a normal cash checkout writes a -3 Sale movement).
+        var register = await client.OpenShiftAsync();
         var checkout = await client.PostAsJsonAsync("/api/v1/sales/checkout", new CheckoutRequest(
-            RegisterId: Uuid7.NewGuid(),
+            RegisterId: register,
             Lines: new[] { new CheckoutLineRequest(product.Id, 3m) },
             Tenders: new[] { new CheckoutTenderRequest(TenderType.Cash, 200m, null) }), PosApiFixture.Json);
         checkout.EnsureSuccessStatusCode();

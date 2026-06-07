@@ -22,6 +22,7 @@ public sealed class Sale : AggregateRoot, ITenantScoped, IStoreScoped, IAuditabl
     public Guid RegisterId { get; private set; }  // the lane / till (internal id)
     // Human register label (e.g. "Lane 1") captured at sale time — the receipt shows this, not the GUID.
     public string RegisterName { get; private set; } = string.Empty;
+    public Guid RegisterSessionId { get; private set; } // the open shift this sale belongs to (cash-up)
     public Guid CashierId { get; private set; }
     // Cashier name + staff code captured at sale time (immutable fact for the receipt — the user may
     // be renamed later; the receipt must show who actually rang it up).
@@ -105,13 +106,14 @@ public sealed class Sale : AggregateRoot, ITenantScoped, IStoreScoped, IAuditabl
 
     public static Sale Start(Guid tenantId, Guid storeId, Guid registerId, Guid cashierId,
         string currency = "KES", string cashierName = "", string cashierStaffCode = "",
-        string registerName = "") => new()
+        string registerName = "", Guid registerSessionId = default) => new()
     {
         Id = Uuid7.NewGuid(),
         TenantId = tenantId,
         StoreId = storeId,
         RegisterId = registerId,
         RegisterName = registerName,
+        RegisterSessionId = registerSessionId,
         CashierId = cashierId,
         CashierName = cashierName,
         CashierStaffCode = cashierStaffCode,

@@ -17,6 +17,7 @@ internal sealed class SaleConfiguration : IEntityTypeConfiguration<Sale>
         b.Property(s => s.StoreId).HasColumnName("store_id").IsRequired();
         b.Property(s => s.RegisterId).HasColumnName("register_id").IsRequired();
         b.Property(s => s.RegisterName).HasColumnName("register_name").HasMaxLength(64).HasDefaultValue("");
+        b.Property(s => s.RegisterSessionId).HasColumnName("register_session_id");
         b.Property(s => s.CashierId).HasColumnName("cashier_id").IsRequired();
         b.Property(s => s.CashierName).HasColumnName("cashier_name").HasMaxLength(128).HasDefaultValue("");
         b.Property(s => s.CashierStaffCode).HasColumnName("cashier_staff_code").HasMaxLength(32).HasDefaultValue("");
@@ -124,6 +125,8 @@ internal sealed class SaleConfiguration : IEntityTypeConfiguration<Sale>
         // Routes queries on the tenant/store partition.
         b.HasIndex(s => new { s.TenantId, s.StoreId, s.Id }).HasDatabaseName("ix_sales_tenant_store_id");
         b.HasIndex(s => new { s.TenantId, s.StoreId, s.Status }).HasDatabaseName("ix_sales_tenant_store_status");
+        b.HasIndex(s => new { s.TenantId, s.StoreId, s.RegisterSessionId }).HasDatabaseName("ix_sales_tenant_store_session");
+        b.HasIndex(s => new { s.TenantId, s.StoreId, s.CompletedAtUtc }).HasDatabaseName("ix_sales_tenant_store_completed");
 
         b.Ignore(s => s.DomainEvents);
         b.Ignore(s => s.Subtotal);
