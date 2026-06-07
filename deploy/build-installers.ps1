@@ -18,7 +18,8 @@ $installerDir = Join-Path $PSScriptRoot 'installer'
 function Find-ISCC {
   $candidates = @(
     "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
-    "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+    "$env:ProgramFiles\Inno Setup 6\ISCC.exe",
+    "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"  # winget user-scope install
   )
   foreach ($c in $candidates) { if (Test-Path $c) { return $c } }
   $cmd = Get-Command ISCC.exe -ErrorAction SilentlyContinue
@@ -40,8 +41,12 @@ if (-not (Test-Path (Join-Path $installerDir 'pgsql\bin\initdb.exe'))) {
 Write-Host "== 3/3 compile installers ==" -ForegroundColor Cyan
 $iscc = Find-ISCC
 New-Item -ItemType Directory -Force -Path (Join-Path $root 'dist\installers') | Out-Null
+# ISCC is a native exe — a failed compile returns non-zero but does NOT stop the script, so check it
+# explicitly or a broken .iss ships silently (and only one of the two installers would be produced).
 & $iscc "/dMyAppVersion=$Version" (Join-Path $installerDir 'store-server.iss')
+if ($LASTEXITCODE -ne 0) { throw "store-server.iss failed to compile (ISCC exit $LASTEXITCODE)." }
 & $iscc "/dMyAppVersion=$Version" (Join-Path $installerDir 'till.iss')
+if ($LASTEXITCODE -ne 0) { throw "till.iss failed to compile (ISCC exit $LASTEXITCODE)." }
 
 Write-Host "Done. Installers in: $root\dist\installers" -ForegroundColor Green
 Get-ChildItem (Join-Path $root 'dist\installers') -Filter *.exe | ForEach-Object { Write-Host "  $($_.Name)" }

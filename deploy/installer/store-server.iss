@@ -60,11 +60,11 @@ Filename: "{cmd}"; Parameters: "/c start """" ""http://localhost:{code:GetAppPor
 
 [UninstallRun]
 ; Stop + remove the store-server service.
-Filename: "sc.exe"; Parameters: "stop CorebaltPOS"; Flags: runhidden runwaituntilterminated; RunOnceId: "StopApp"
-Filename: "sc.exe"; Parameters: "delete CorebaltPOS"; Flags: runhidden runwaituntilterminated; RunOnceId: "DelApp"
+Filename: "sc.exe"; Parameters: "stop CorebaltPOS"; Flags: runhidden waituntilterminated; RunOnceId: "StopApp"
+Filename: "sc.exe"; Parameters: "delete CorebaltPOS"; Flags: runhidden waituntilterminated; RunOnceId: "DelApp"
 ; Stop + unregister the Postgres service (binaries still present at this point).
-Filename: "sc.exe"; Parameters: "stop CorebaltPOSPostgres"; Flags: runhidden runwaituntilterminated; RunOnceId: "StopPg"
-Filename: "{app}\pgsql\bin\pg_ctl.exe"; Parameters: "unregister -N CorebaltPOSPostgres"; Flags: runhidden runwaituntilterminated; RunOnceId: "UnregPg"
+Filename: "sc.exe"; Parameters: "stop CorebaltPOSPostgres"; Flags: runhidden waituntilterminated; RunOnceId: "StopPg"
+Filename: "{app}\pgsql\bin\pg_ctl.exe"; Parameters: "unregister -N CorebaltPOSPostgres"; Flags: runhidden waituntilterminated; RunOnceId: "UnregPg"
 
 [Code]
 var
@@ -83,11 +83,13 @@ end;
 { On upgrade, read the LAN port back from the existing config so the firewall/browser use the real value. }
 function ReadConfiguredPort(): String;
 var
+  raw: AnsiString;           { LoadStringFromFile needs an AnsiString (Unicode Inno Setup) }
   s, marker, digits: String;
   p, i: Integer;
 begin
   Result := '5080';
-  if not LoadStringFromFile(ExpandConstant('{app}\app\appsettings.Production.json'), s) then exit;
+  if not LoadStringFromFile(ExpandConstant('{app}\app\appsettings.Production.json'), raw) then exit;
+  s := String(raw);
   marker := '0.0.0.0:';
   p := Pos(marker, s);
   if p = 0 then exit;
