@@ -4,6 +4,7 @@ obj/
 .vs/
 .vscode/
 .idea/
+.claude/
 
 # Install-level config holds per-client secrets (DB password, signing key) — never commit the filled file.
 appsettings.Production.json
