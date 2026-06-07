@@ -92,7 +92,19 @@ Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Databa
   step 14 (cash management + close-of-day: register shifts, drawer movements, X/Z reports), and step 15
   (deployment/ops app-side foundation: Windows Service host + self-contained publish + safe auto-migration).
   All six projects target `net10.0`; `dotnet test` is green at 110 (29 domain + 81 API).
-- **Deployment / ops (app-side; installer + scheduled backups come next):** the store server runs headless
+- **Installers (Inno Setup; `deploy/installer/`):** turnkey, admin, no dev tools on the client.
+  `store-server.iss` bundles the self-contained server + **portable Postgres** and on a fresh install runs
+  `scripts/provision-server.ps1` — `initdb` an ISOLATED cluster under `ProgramData\Corebalt POS\data` on
+  port 5544 with a generated password, register+start it as `CorebaltPOSPostgres`, create `pos`, write the
+  locked-down `appsettings.Production.json` (secrets, LAN `Urls`, tenant/store GUIDs, `Ops` paths), register
+  +start the `CorebaltPOS` service (first start auto-migrates the empty DB), open the LAN firewall port, and
+  open the back-office → setup wizard. Upgrades stop the service, replace only `app\`, restart
+  (auto-migrate-with-backup); config/DB/backups preserved. Uninstall removes both services + binaries but
+  KEEPS the DB + backups. `till.iss` installs the till + shortcuts and runs `scripts/provision-till.ps1`
+  (server URL + lane → `appsettings.json`, stable `RegisterId` preserved). Build: `deploy/fetch-postgres.ps1`
+  then `deploy/build-installers.ps1` → `dist/installers/*.exe`. MUST be E2E-tested on a clean Windows VM
+  (`deploy/INSTALLER.md`), never a dev box (it has .NET + a conflicting Postgres).
+- **Deployment / ops (app-side):** the store server runs headless
   as a **Windows Service** (`builder.Host.UseWindowsService()` — a no-op in console/dev, same binary).
   Both apps publish **self-contained win-x64, single-folder** (runtime bundled; client has no .NET) via
   `deploy/publish-server.ps1` + `deploy/publish-till.ps1` → `dist/`. Install-level config (DB connection

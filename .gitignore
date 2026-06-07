@@ -16,3 +16,7 @@ logs/
 backups/
 dp-keys/
 schema-version.json
+
+# Installer build inputs (downloaded portable Postgres + MSVC runtime) — fetched, not committed.
+deploy/installer/pgsql/
+deploy/installer/redist/
