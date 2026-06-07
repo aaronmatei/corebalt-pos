@@ -435,6 +435,15 @@ mutable running counters).
   (counted → expected/variance → Z; a large variance prompts a Manager PIN). After close it returns to
   the Open-shift prompt. The Supervisor/Manager override is a one-off PIN login used only for that call.
 
+## Deployment (on-prem Windows)
+
+The apps are installable on a retailer's Windows machines with no developer tools on the client. The
+store server runs headless as a **Windows Service**; both apps publish **self-contained win-x64**
+(runtime bundled). On service start the server **safely auto-migrates** — a populated database is
+`pg_dump`-backed-up before any pending migration, and if the backup fails it refuses to migrate. Build
+the packages with `deploy/publish-server.ps1` + `deploy/publish-till.ps1`; see **`deploy/README.md`**
+for install, config, ports and the service command. (The MSI installer + scheduled backups come next.)
+
 ## Roadmap (anticipated in design choices)
 - Single-store supermarket: S1 multi-lane foundation, S2 weighed goods + scales, S3 cash office,
   S4 promotions + loyalty, S5 procurement.

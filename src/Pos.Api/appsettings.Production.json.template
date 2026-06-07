@@ -1,0 +1,33 @@
+{
+  "_README": "Install-level config WRITTEN BY THE INSTALLER as appsettings.Production.json (next to Pos.Api.exe). NEVER commit the filled file — it holds this client's DB password, signing key and identity. Values below are placeholders.",
+
+  "ConnectionStrings": {
+    "_comment": "Local Postgres on a DEDICATED non-default port with a per-install generated password (avoids 5432 conflicts).",
+    "Pos": "Host=localhost;Port=5544;Database=pos;Username=corebalt;Password=__GENERATED_AT_INSTALL__"
+  },
+
+  "Urls": "http://0.0.0.0:5080",
+  "_Urls_comment": "Bind all interfaces so tills on the LAN can reach the store server. Open this port in the Windows firewall.",
+
+  "StoreServer": {
+    "_comment": "This install's tenant + store identity (issued by Corebalt for the client).",
+    "TenantId": "00000000-0000-0000-0000-000000000000",
+    "StoreId": "00000000-0000-0000-0000-000000000000"
+  },
+
+  "Jwt": {
+    "_comment": "Per-install HMAC signing key for till/back-office tokens. Generate >= 32 random chars at install.",
+    "Key": "__GENERATED_AT_INSTALL_AT_LEAST_32_CHARS__"
+  },
+
+  "Receipt": { "NumberPrefix": "MB" },
+
+  "Ops": {
+    "_comment": "Per-install ops. Paths default to folders under the install directory if omitted.",
+    "AutoMigrate": true,
+    "PgDumpPath": "C:\\Program Files\\PostgreSQL\\17\\bin\\pg_dump.exe",
+    "BackupDirectory": "C:\\ProgramData\\Corebalt POS\\backups",
+    "LogDirectory": "C:\\ProgramData\\Corebalt POS\\logs",
+    "DataProtectionKeysPath": "C:\\ProgramData\\Corebalt POS\\dp-keys"
+  }
+}

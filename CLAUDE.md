@@ -63,7 +63,7 @@ dotnet ef database update --project src/Pos.Infrastructure --startup-project sam
 dotnet run  --project samples/Pos.Persistence.Demo   # save→reload a sale, print the outbox row
 dotnet run  --project src/Pos.Api                    # store-server host on http://localhost:5080; auto-applies migrations in Development
 dotnet run  --project src/Pos.Till                   # Avalonia till (pure API client); talks to :5080
-dotnet test                                          # domain + API integration tests (102)
+dotnet test                                          # domain + API integration tests (110)
 ```
 Receipt header + currency come from the tenant's DB-backed `MerchantProfile` (set in the /setup wizard),
 NOT appsettings. A fresh install routes to `/setup`; you can't transact until provisioned. M-Pesa + eTIMS
@@ -89,8 +89,24 @@ Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Databa
   (per-client multi-tenant install: DB-backed merchant profile + per-tenant integration settings +
   entitlements + first-run setup wizard), and step 13 (thermal printing pipeline: per-register
   PrinterProfile, ESC/POS builder, logo/QR rasterizer, Network/File/Null printers, PNG preview), and
-  step 14 (cash management + close-of-day: register shifts, drawer movements, X/Z reports).
-  All six projects target `net10.0`; `dotnet test` is green at 102 (29 domain + 73 API).
+  step 14 (cash management + close-of-day: register shifts, drawer movements, X/Z reports), and step 15
+  (deployment/ops app-side foundation: Windows Service host + self-contained publish + safe auto-migration).
+  All six projects target `net10.0`; `dotnet test` is green at 110 (29 domain + 81 API).
+- **Deployment / ops (app-side; installer + scheduled backups come next):** the store server runs headless
+  as a **Windows Service** (`builder.Host.UseWindowsService()` — a no-op in console/dev, same binary).
+  Both apps publish **self-contained win-x64, single-folder** (runtime bundled; client has no .NET) via
+  `deploy/publish-server.ps1` + `deploy/publish-till.ps1` → `dist/`. Install-level config (DB connection
+  string with a dedicated non-default port + generated password, `Urls` LAN bind, `StoreServer` identity,
+  `Jwt:Key`, `Ops:*` paths) is written by the installer as **`appsettings.Production.json`** (gitignored;
+  template `appsettings.Production.json.template`). **Safe startup auto-migration** (`Pos.Infrastructure/Ops`):
+  `MigrationPlan.Decide` + `StartupMigrator` — in Production, if pending migrations exist on a POPULATED DB
+  it takes a timestamped `pg_dump` backup (`PgDumpBackup`, `Ops:PgDumpPath`) to `Ops:BackupDirectory`
+  FIRST; if the backup fails it REFUSES to migrate and fails the service start (fatal log); a fresh/empty
+  DB migrates straight through. Applied schema version → `schema-version.json`. **Serilog** rolling file
+  logs (`Ops:LogDirectory`, 31-day/50 MB retention) + console. Data-Protection key ring path is
+  per-install (`Ops:DataProtectionKeysPath`). Verified live: published self-contained, ran as a console in
+  Production, bound `0.0.0.0:5081`, backed-up-then-migrated a one-behind populated DB, a LAN client reached
+  the API. See `deploy/README.md`.
 - **Cash management + close-of-day (S3):** the spine is a `RegisterSession` (shift) per register
   (`Pos.Domain/Cash`): OpenedBy/At + OpeningFloat → ClosedBy/At + CountedCash/ExpectedCash/Variance;
   one OPEN session per register (filtered unique index); a closed session is an immutable end-of-day

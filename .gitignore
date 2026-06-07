@@ -4,3 +4,14 @@ obj/
 .vs/
 .vscode/
 .idea/
+
+# Install-level config holds per-client secrets (DB password, signing key) — never commit the filled file.
+appsettings.Production.json
+appsettings.*.Local.json
+
+# Publish output + runtime per-install folders.
+dist/
+logs/
+backups/
+dp-keys/
+schema-version.json

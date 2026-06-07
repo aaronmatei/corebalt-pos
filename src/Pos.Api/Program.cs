@@ -22,15 +22,46 @@ using Pos.Infrastructure;
 using Pos.Infrastructure.Fiscalization;
 using Pos.Infrastructure.Identity;
 using Pos.Infrastructure.Mpesa;
+using Pos.Infrastructure.Ops;
 using Pos.Infrastructure.Persistence;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using Serilog;
+using Serilog.Events;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Run headless as a Windows Service on the store-server box (no-op in console/dev — same binary).
+builder.Host.UseWindowsService(o => o.ServiceName = "Corebalt POS Store Server");
+
+// ── Per-install paths (under the install folder unless the installer overrides them in config) ──
+var contentRoot = builder.Environment.ContentRootPath;
+string OpsPath(string key, string fallbackSubfolder) =>
+    builder.Configuration[key] is { Length: > 0 } configured ? configured : Path.Combine(contentRoot, fallbackSubfolder);
+var logDirectory = OpsPath("Ops:LogDirectory", "logs");
+var backupDirectory = OpsPath("Ops:BackupDirectory", "backups");
+var dataProtectionKeysPath = OpsPath("Ops:DataProtectionKeysPath", "dp-keys");
+
+// ── Structured rolling file logs (Serilog) for remote support, plus console for dev/SCM ──
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Information()
+    .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft.EntityFrameworkCore.Database.Command", LogEventLevel.Warning)
+    .Enrich.FromLogContext()
+    .WriteTo.Console()
+    .WriteTo.File(Path.Combine(logDirectory, "pos-.log"),
+        rollingInterval: RollingInterval.Day,
+        retainedFileCountLimit: 31, // ~a month of daily logs
+        rollOnFileSizeLimit: true, fileSizeLimitBytes: 50 * 1024 * 1024,
+        outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {SourceContext} {Message:lj}{NewLine}{Exception}")
+    .CreateLogger();
+builder.Host.UseSerilog();
 
 var conn = Environment.GetEnvironmentVariable("POS_DB")
     ?? builder.Configuration.GetConnectionString("Pos")
     ?? "Host=localhost;Port=5544;Database=pos;Username=postgres;Password=pos";
 
-builder.Services.AddInfrastructure(conn);
+builder.Services.AddInfrastructure(conn, dataProtectionKeysPath);
 builder.Services.AddScoped<CheckoutService>();
 builder.Services.AddScoped<Pos.Application.Catalog.ProductService>();
 builder.Services.AddScoped<Pos.Application.Inventory.StockService>();
@@ -164,14 +195,34 @@ builder.Services.Configure<JsonOptions>(o =>
 
 var app = builder.Build();
 
-// In Development, self-heal a fresh/outdated database by applying migrations on startup, so a
-// recreated docker container (or a clean checkout) doesn't 500 with "relation does not exist".
-// NOT done in Production: there migrations are applied deliberately by ops/CI, never implicitly by
-// the web host. Tests run under the "Testing" environment and migrate via their own fixture.
+// Migrations on startup:
+//  • Dev/Testing — self-heal a fresh/outdated DB straight through (disposable data).
+//  • Production (on-prem install) — SAFE auto-migration: take a pre-migration pg_dump backup first
+//    whenever the DB already holds client data; if the backup fails, REFUSE to migrate and fail the
+//    service start loudly (StartupMigrator). Toggleable via Ops:AutoMigrate.
 if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing"))
 {
     using var scope = app.Services.CreateScope();
     scope.ServiceProvider.GetRequiredService<PosDbContext>().Database.Migrate();
+}
+else if (app.Configuration.GetValue("Ops:AutoMigrate", true))
+{
+    using var scope = app.Services.CreateScope();
+    var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
+    var db = scope.ServiceProvider.GetRequiredService<PosDbContext>();
+    var backup = new PgDumpBackup(conn, backupDirectory,
+        app.Configuration["Ops:PgDumpPath"] ?? "pg_dump", loggerFactory.CreateLogger("Backup"));
+    try
+    {
+        await StartupMigrator.RunAsync(db, backup, Path.Combine(contentRoot, "schema-version.json"),
+            loggerFactory.CreateLogger("Migrator"));
+    }
+    catch (Exception ex)
+    {
+        Log.Fatal(ex, "Startup migration aborted — the store server will not start.");
+        Log.CloseAndFlush();
+        throw; // a backup/migration failure must stop the service, not silently run on stale schema
+    }
 }
 
 // First-run is handled by the setup wizard (/setup) — it creates the merchant profile + the first

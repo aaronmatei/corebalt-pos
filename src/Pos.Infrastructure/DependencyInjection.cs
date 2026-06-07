@@ -30,7 +30,8 @@ public static class DependencyInjection
     /// instance — each branch's store server has its own database; HQ aggregates from outbox
     /// shipments.
     /// </summary>
-    public static IServiceCollection AddInfrastructure(this IServiceCollection services, string connectionString)
+    public static IServiceCollection AddInfrastructure(this IServiceCollection services, string connectionString,
+        string? dataProtectionKeysPath = null)
     {
         services.AddSingleton<IClock, SystemClock>();
         services.AddScoped<DomainEventsToOutboxInterceptor>();
@@ -57,9 +58,11 @@ public static class DependencyInjection
 
         // Tenancy: merchant profile + per-tenant integration settings (encrypted) + entitlements + setup.
         // Integration secrets are encrypted at rest with ASP.NET Core Data Protection — the install-level
-        // key ring persisted to disk (per-machine), isolated by application name. No app-config key.
-        var keysDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "CorebaltPos", "dp-keys");
+        // key ring persisted to disk, isolated by application name. The host passes the per-install path
+        // (the service account can read it); falls back to LocalAppData for dev/tests. No app-config key.
+        var keysDir = string.IsNullOrWhiteSpace(dataProtectionKeysPath)
+            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CorebaltPos", "dp-keys")
+            : dataProtectionKeysPath;
         Directory.CreateDirectory(keysDir);
         services.AddDataProtection()
             .SetApplicationName("Corebalt.POS")
