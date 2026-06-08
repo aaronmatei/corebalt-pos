@@ -37,6 +37,9 @@ public sealed class PosApiFixture : IAsyncLifetime
     /// <summary>The in-memory M-Pesa provider backing the test host. Reset it at the start of each test.</summary>
     public FakeMpesaClient Mpesa => Factory.Services.GetRequiredService<FakeMpesaClient>();
 
+    /// <summary>Records real-time notification broadcasts (SignalR is swapped for this in tests).</summary>
+    public RecordingNotificationBroadcaster Broadcaster => Factory.Services.GetRequiredService<RecordingNotificationBroadcaster>();
+
     public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
         Converters = { new JsonStringEnumConverter() }
@@ -66,6 +69,12 @@ public sealed class PosApiFixture : IAsyncLifetime
                     services.RemoveAll<IMpesaClient>();
                     services.AddSingleton<FakeMpesaClient>();
                     services.AddSingleton<IMpesaClient>(sp => sp.GetRequiredService<FakeMpesaClient>());
+                    // Capture real-time notification pushes so a test can assert the broadcast fired
+                    // (the live SignalR transport itself is framework behaviour, not under test).
+                    services.RemoveAll<Pos.Application.Notifications.INotificationBroadcaster>();
+                    services.AddSingleton<RecordingNotificationBroadcaster>();
+                    services.AddSingleton<Pos.Application.Notifications.INotificationBroadcaster>(
+                        sp => sp.GetRequiredService<RecordingNotificationBroadcaster>());
                 });
             });
 

@@ -15,14 +15,15 @@
                     <NavLink href="/stock">Stock</NavLink>
                     <NavLink href="/reorder">
                         Reorder
-                        @if (_lowStockCount > 0)
-                        {
-                            <span class="badge" title="@_lowStockCount items need reordering">@_lowStockCount</span>
-                        }
+                        @* Always rendered (hidden at 0) so the SignalR client can update it live. *@
+                        <span id="lowstock-badge" class="badge" title="items need reordering"
+                              style="@(_lowStockCount > 0 ? "" : "display:none")">@_lowStockCount</span>
                     </NavLink>
+                    <NavLink href="/customers">Customers</NavLink>
                     <NavLink href="/users">Cashiers</NavLink>
                     <NavLink href="/sessions">Sessions</NavLink>
                     <NavLink href="/day-summary">Day summary</NavLink>
+                    <NavLink href="/reports/vat">VAT report</NavLink>
                     <NavLink href="/backups">Backups</NavLink>
                     <NavLink href="/settings">Settings</NavLink>
                 </nav>

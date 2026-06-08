@@ -93,7 +93,60 @@ Connection string via `POS_DB` env var (default `Host=localhost;Port=5544;Databa
   (deployment/ops app-side foundation: Windows Service host + self-contained publish + safe auto-migration),
   Inno Setup installers (store server with portable Postgres + till), and backups + restore (scheduled
   pg_dump, verify, off-machine copy, retention, guarded restore).
-  All six projects target `net10.0`; `dotnet test` is green at 131 (29 domain + 102 API).
+  All six projects target `net10.0`; `dotnet test` is green at 143 (29 domain + 110 API + 4 till).
+- **Customers + loyalty (S4 groundwork):** a tenant-scoped `Customer` aggregate (`Pos.Domain/Customers`;
+  Name/Phone/Email/KraPin/NationalId/LoyaltyPoints/IsActive) — master data shared across branches like
+  `Category`, **eventless** (tenant-only, so it never goes through the tenant+store outbox). Phone is the
+  natural key (unique per tenant, filtered; normalized to 2547######## via `KenyanIdValidator`, which also
+  format-checks KRA PIN/National ID for KYC). `Sale` gains a nullable `CustomerId` (loose ref, null =
+  walk-in — selling never requires a customer). **Loyalty accrual**: `CheckoutService` accrues points on
+  the VAT-inclusive grand total IN THE SAME checkout transaction (`LoyaltyOptions`, default 1 pt / 100 KES,
+  config `Loyalty`). `CustomerService` + `ICustomerRepository` back the JSON API (`/api/v1/customers` CRUD +
+  `?q=` search + `by-phone/{phone}` lookup; reads Cashier+, writes Manager; manual `POST {id}/points`
+  adjust) and the back-office `/customers` page. **Till**: optional attach-by-phone in the tender panel
+  (`FindCustomerByPhoneAsync`); `CustomerId` rides the `CheckoutRequestDto` (incl. the offline payload, so
+  points accrue on sync). Migration `AddCustomers`. NOTE: M-Pesa-path loyalty + points redemption (a
+  points tender) are the noted follow-ups.
+- **HQ-sync pull endpoint (M1 seam):** the future HQ/cloud tier PULLs the store's transactional-outbox
+  changes and acks them — the outbox is already the seam, this just exposes it. `IOutboxSyncStore`
+  (`Pos.Application/Sync`, impl `Pos.Infrastructure/Sync`) reads unprocessed rows (tenant/store-scoped,
+  ordered OccurredAt+Id) and acks by stamping `ProcessedAtUtc` (the HQ-sync marker — `OutboxDispatcher`'s
+  same field; kept SEPARATE from the in-app low-stock dispatcher, which dedups on its own source id, and
+  isn't run as a worker so nothing races the pull). `GET /api/v1/sync/changes?max=` → `{changes, remaining,
+  hasMore}`; `POST /api/v1/sync/ack {ids}`. Manager-gated for now (a dedicated HQ/sync credential is the
+  hardening). At-least-once: re-reads are safe (HQ keys on the change id); re-ack is a no-op.
+- **VAT/tax report (KRA filing):** `VatReportService` (`Pos.Application/Reports`) aggregates the FROZEN
+  per-line VAT (never recomputed) across completed sales in a date range, by tax class (taxable/VAT/gross/
+  sale-count + totals). `GET /api/v1/reports/vat?from=&to=&format=csv` (Manager; EAT day window, `to`
+  inclusive, defaults to the current month) returns JSON or a downloadable CSV; back-office `/reports/vat`
+  page renders the table + a cookie-auth CSV download (`/backoffice/reports/vat.csv`).
+- **Real-time back-office notifications (SignalR):** `NotificationHub` (`Pos.Api/Hubs`, cookie-auth, clients
+  join their `store:{tenant}:{store}` group on connect) + `INotificationBroadcaster`
+  (`Pos.Application/Notifications`; no-op `NullNotificationBroadcaster` default, `SignalRNotificationBroadcaster`
+  in the API, last-registration-wins). `InAppNotificationChannel` now ALSO pushes each just-persisted
+  notification (title + unread count) to the store group — best-effort (a transport failure never breaks
+  the feed write). Browser consumer: the SignalR JS client is **bundled locally** (`wwwroot/lib/signalr/`,
+  no CDN — on-prem LAN) + `wwwroot/js/notifications.js` updates the reorder badge live + shows a toast;
+  wired in `App.razor`, badge given `id="lowstock-badge"`. Test swaps a `RecordingNotificationBroadcaster`
+  in the fixture and asserts the dispatch broadcasts once.
+- **Offline-first till (the till keeps selling when the LAN/server drops):** the till stamps every sale
+  with an **edge-generated UUIDv7** (`Guid.CreateVersion7()`) BEFORE sending; checkout is now **idempotent**
+  on that id — `CheckoutService.CheckoutAsync(..., saleId)` returns the already-committed sale instead of
+  charging twice (checked FIRST, before the setup/open-session guards, so a committed sale replays even if
+  the shift has since closed). `Sale.Start` takes the optional client id; `CheckoutRequest`/`CheckoutRequestDto`
+  carry `SaleId`. **Till side** (`Pos.Till/Services/Local`): a `LocalStore` (bundled `Microsoft.Data.Sqlite`,
+  per-machine db under LocalAppData) **caches the catalogue** (list + barcode lookup fall back to it offline)
+  and **queues offline cash sales** (idempotent on the sale id). `Connectivity` tracks online/offline (nudged
+  by every API call's outcome — `ApiResult.StatusCode == 0` = transport failure = offline; success = online).
+  A background **drain loop** (`MainViewModel.Offline.cs`) probes `/healthz` (`IPosApiClient.PingAsync`) and,
+  when reachable, replays the queue through the idempotent checkout (removes on success; leaves a real-reject
+  e.g. 409-shift-closed queued + visible). Offline sales are **cash-only** (M-Pesa needs the network → its
+  button disables offline) and must be **fully tendered** (an underpaid offline sale would 409 on replay, so
+  it's refused up front). The header shows a green "● Online" / amber "● Offline — N to sync" pill; the
+  server prints the receipt when the sale syncs. **Caveat (MVP):** a queued sale drains under whatever
+  session/cashier is logged in at drain time — the loop runs every 5s so this is the same cashier+shift in
+  practice; per-sale cashier/token capture is the rigorous upgrade. Tests: server idempotency
+  (`CheckoutFlowTests`) + `Pos.Till.Tests` (LocalStore cache round-trip, barcode, enqueue-dedup, drain order).
 - **Fingerprint sign-in (OPTIONAL; PIN stays the fallback) — SEAM, stub reader for dev:** the reader SDK
   plugs in behind `IFingerprintAuthenticator` (`Pos.Application/Identity`: `IsEnabled`, `ExtractTemplate`,
   `Identify(probe, candidates)->UserId`); `StubFingerprintAuthenticator` (byte-exact match) backs dev/test,

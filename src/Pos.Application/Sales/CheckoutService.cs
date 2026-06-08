@@ -1,6 +1,7 @@
 using Pos.Application.Abstractions;
 using Pos.Application.Cash;
 using Pos.Application.Catalog;
+using Pos.Application.Customers;
 using Pos.Application.Tenancy;
 using Pos.Domain.Sales;
 using Pos.SharedKernel;
@@ -22,6 +23,8 @@ public sealed class CheckoutService
     private readonly IRegisterSessionRepository _sessions;
     private readonly SaleCompletion _completion;
     private readonly ISetupGuard _setup;
+    private readonly ICustomerRepository _customers;
+    private readonly LoyaltyOptions _loyalty;
     private readonly IUnitOfWork _uow;
 
     public CheckoutService(
@@ -32,8 +35,10 @@ public sealed class CheckoutService
         IRegisterSessionRepository sessions,
         SaleCompletion completion,
         ISetupGuard setup,
+        ICustomerRepository customers,
+        LoyaltyOptions loyalty,
         IUnitOfWork uow)
-    { _ctx = ctx; _sales = sales; _products = products; _registers = registers; _sessions = sessions; _completion = completion; _setup = setup; _uow = uow; }
+    { _ctx = ctx; _sales = sales; _products = products; _registers = registers; _sessions = sessions; _completion = completion; _setup = setup; _customers = customers; _loyalty = loyalty; _uow = uow; }
 
     /// <summary>The register must have an OPEN shift to sell — otherwise the cashier opens one first.</summary>
     private async Task<Guid> RequireOpenSessionAsync(Guid registerId, CancellationToken ct) =>
@@ -108,15 +113,36 @@ public sealed class CheckoutService
         string currency,
         IReadOnlyList<CheckoutLine> lines,
         IReadOnlyList<CheckoutTender> tenders,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        Guid saleId = default,
+        Guid? customerId = null)
     {
         if (lines is null || lines.Count == 0)
             throw new ArgumentException("A checkout needs at least one line.", nameof(lines));
+
+        // Idempotent replay: if the till already committed this sale (it generates the UUIDv7 and may
+        // re-POST a sale it queued offline, or retry after a dropped response), return the existing one
+        // instead of charging twice. Checked FIRST — a committed sale stands even if the shift has since
+        // closed, so this must not depend on the setup/open-session guards below.
+        if (saleId != default)
+        {
+            var existing = await _sales.GetAsync(_ctx.TenantId, _ctx.StoreId, saleId, ct);
+            if (existing is not null)
+            {
+                var changeDue = existing.BalanceDue.Amount < 0 ? -existing.BalanceDue.Amount : 0m;
+                return new CheckoutResult(existing.Id, existing.Subtotal.Amount, changeDue, existing.Currency);
+            }
+        }
+
         await _setup.EnsureConfiguredAsync(ct);
         var sessionId = await RequireOpenSessionAsync(registerId, ct);
 
+        // Attach a loyalty member if one was supplied and exists in this tenant (else sell as walk-in —
+        // an unknown/stale id never blocks the sale).
+        var customer = customerId is { } cid ? await _customers.GetAsync(_ctx.TenantId, cid, ct) : null;
+
         var register = await _registers.GetOrCreateAsync(_ctx.TenantId, _ctx.StoreId, registerId, ct);
-        var sale = Sale.Start(_ctx.TenantId, _ctx.StoreId, registerId, _ctx.UserId, currency, _ctx.UserName, _ctx.StaffCode, register.DisplayLabel, sessionId);
+        var sale = Sale.Start(_ctx.TenantId, _ctx.StoreId, registerId, _ctx.UserId, currency, _ctx.UserName, _ctx.StaffCode, register.DisplayLabel, sessionId, saleId, customer?.Id);
 
         foreach (var l in lines)
         {
@@ -137,7 +163,13 @@ public sealed class CheckoutService
         {
             await _completion.FinalizeAsync(sale, ct2); // receipt number + complete + stock movements
             await _sales.AddAsync(sale, ct2);
-            await _uow.SaveChangesAsync(ct2); // atomic: counter + sale + lines + tenders + movements + outbox
+
+            // Loyalty accrual — points on the VAT-inclusive grand total, in the SAME transaction as the sale
+            // (the customer is already tracked, so mutating it flushes with everything else).
+            if (customer is not null)
+                customer.AccruePoints(_loyalty.PointsFor(sale.GrandTotal.Amount));
+
+            await _uow.SaveChangesAsync(ct2); // atomic: counter + sale + lines + tenders + movements + outbox + points
             var change = sale.BalanceDue.Amount < 0 ? -sale.BalanceDue.Amount : 0m;
             return new CheckoutResult(sale.Id, sale.Subtotal.Amount, change, sale.Currency);
         }, ct);

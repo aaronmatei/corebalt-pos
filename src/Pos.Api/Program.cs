@@ -88,8 +88,16 @@ builder.Services.AddInfrastructure(conn, dataProtectionKeysPath);
 builder.Services.AddScoped<CheckoutService>();
 builder.Services.AddScoped<Pos.Application.Catalog.ProductService>();
 builder.Services.AddScoped<Pos.Application.Catalog.CategoryService>();
+builder.Services.AddScoped<Pos.Application.Customers.CustomerService>();
+// Loyalty accrual rule (1 point per 100 KES by default); host may override via the "Loyalty" config section.
+builder.Services.AddSingleton(builder.Configuration.GetSection("Loyalty").Get<Pos.Application.Customers.LoyaltyOptions>()
+    ?? new Pos.Application.Customers.LoyaltyOptions());
 builder.Services.AddScoped<Pos.Application.Inventory.StockService>();
 builder.Services.AddScoped<Pos.Application.Inventory.LowStockService>();
+// Real-time: SignalR pushes new notifications to the back-office (overrides the no-op broadcaster from
+// AddInfrastructure — last registration wins). The browser connects with its auth cookie.
+builder.Services.AddSignalR();
+builder.Services.AddSingleton<Pos.Application.Notifications.INotificationBroadcaster, Pos.Api.Hubs.SignalRNotificationBroadcaster>();
 builder.Services.AddScoped<Pos.Application.Notifications.NotificationFeedService>();
 builder.Services.AddScoped<Pos.Application.Sales.ReturnService>();
 // Per-tenant integration secrets are encrypted at rest via ASP.NET Core Data Protection — wired in
@@ -305,6 +313,7 @@ app.UseAntiforgery(); // protects the back-office form posts
 var v1 = app.MapGroup("/api/v1").RequireAuthorization();
 v1.MapCatalog();
 v1.MapCategories();
+v1.MapCustomers();
 v1.MapSales();
 v1.MapReceipts();
 v1.MapReturns();
@@ -314,6 +323,8 @@ v1.MapTenancy();
 v1.MapCash();
 v1.MapBackups();
 v1.MapNotifications();
+v1.MapReports();
+v1.MapSync();
 
 app.MapAuth();   // /api/v1/auth/* (login + pin-login anonymous; change-password authorized)
 app.MapUsers();  // /api/v1/users (Manager only)
@@ -321,6 +332,7 @@ app.MapUsers();  // /api/v1/users (Manager only)
 // Blazor back-office: Razor Component pages + the form-post endpoints behind them.
 app.MapRazorComponents<App>();
 app.MapBackOffice();
+app.MapHub<Pos.Api.Hubs.NotificationHub>("/hubs/notifications"); // real-time back-office push (cookie auth)
 
 // Unauthenticated: Daraja can't send identity headers. Idempotent + reconciled by CheckoutRequestID.
 app.MapMpesaCallback();

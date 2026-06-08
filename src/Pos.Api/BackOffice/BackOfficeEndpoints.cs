@@ -146,6 +146,30 @@ internal static class BackOfficeEndpoints
             catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return Back("/categories", ex); }
         }).RequireAuthorization("BackOfficeManager");
 
+        // ── Customers / loyalty ──
+        g.MapPost("/customers", async (Pos.Application.Customers.CustomerService svc,
+            [FromForm] string name, [FromForm] string? phone, [FromForm] string? email,
+            [FromForm] string? kraPin, [FromForm] string? nationalId, CancellationToken ct) =>
+        {
+            try { await svc.CreateAsync(name, phone, email, kraPin, nationalId, ct); return Results.Redirect("/customers"); }
+            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return Back("/customers", ex); }
+        }).RequireAuthorization("BackOfficeManager");
+
+        g.MapPost("/customers/{id:guid}", async (Guid id, Pos.Application.Customers.CustomerService svc,
+            [FromForm] string name, [FromForm] string? phone, [FromForm] string? email,
+            [FromForm] string? kraPin, [FromForm] string? nationalId, [FromForm] string? isActive, CancellationToken ct) =>
+        {
+            try { await svc.UpdateAsync(id, name, phone, email, kraPin, nationalId, isActive == "true", ct); return Results.Redirect("/customers"); }
+            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return Back("/customers", ex); }
+        }).RequireAuthorization("BackOfficeManager");
+
+        g.MapPost("/customers/{id:guid}/points", async (Guid id, Pos.Application.Customers.CustomerService svc,
+            [FromForm] string? delta, CancellationToken ct) =>
+        {
+            try { await svc.AdjustPointsAsync(id, OptionalInt(delta, "Points"), ct); return Results.Redirect("/customers"); }
+            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return Back("/customers", ex); }
+        }).RequireAuthorization("BackOfficeManager");
+
         g.MapPost("/products/{id:guid}/price", async (Guid id, ProductService svc, ICurrentContext ctx,
             IMerchantProfileRepository merchants, [FromForm] string? amount, CancellationToken ct) =>
         {
@@ -299,6 +323,17 @@ internal static class BackOfficeEndpoints
             var report = await reports.BuildAsync(session, ct);
             await output.PrintShiftReportAsync(report.RegisterId, report, ct);
             return Results.Redirect($"/sessions/{id}");
+        }).RequireAuthorization("BackOfficeManager");
+
+        // VAT report CSV download for the browser (cookie auth — the JSON API equivalent needs a JWT).
+        g.MapGet("/reports/vat.csv", async (string? from, string? to, ICurrentContext ctx,
+            Pos.Application.Reports.VatReportService reports, CancellationToken ct) =>
+        {
+            var (fromDate, toDate, fromUtc, toExclusiveUtc) = Endpoints.ReportEndpoints.EatRange(from, to);
+            var report = await reports.BuildAsync(ctx.TenantId, ctx.StoreId, fromDate, toDate, fromUtc, toExclusiveUtc, ct);
+            var csv = Pos.Application.Reports.VatReportService.ToCsv(report);
+            return Results.File(System.Text.Encoding.UTF8.GetBytes(csv), "text/csv",
+                $"vat-report-{fromDate:yyyyMMdd}-{toDate:yyyyMMdd}.csv");
         }).RequireAuthorization("BackOfficeManager");
 
         return app;

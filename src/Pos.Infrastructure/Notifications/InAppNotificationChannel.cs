@@ -14,12 +14,15 @@ internal sealed class InAppNotificationChannel : INotificationChannel
     private readonly INotificationRepository _repo;
     private readonly IUnitOfWork _uow;
     private readonly IClock _clock;
+    private readonly INotificationBroadcaster _broadcaster;
 
-    public InAppNotificationChannel(INotificationRepository repo, IUnitOfWork uow, IClock clock)
+    public InAppNotificationChannel(INotificationRepository repo, IUnitOfWork uow, IClock clock,
+        INotificationBroadcaster broadcaster)
     {
         _repo = repo;
         _uow = uow;
         _clock = clock;
+        _broadcaster = broadcaster;
     }
 
     public string Channel => "InApp";
@@ -36,5 +39,10 @@ internal sealed class InAppNotificationChannel : INotificationChannel
 
         await _repo.AddAsync(notification, ct);
         await _uow.SaveChangesAsync(ct);
+
+        // Push it live to any connected back-office client (best-effort — never fail the feed write).
+        var unread = await _repo.UnreadCountAsync(message.TenantId, message.StoreId, ct);
+        await _broadcaster.NotifyAsync(message.TenantId, message.StoreId,
+            new RealtimeNotification(message.Type.ToString(), message.Title, message.Body, unread), ct);
     }
 }

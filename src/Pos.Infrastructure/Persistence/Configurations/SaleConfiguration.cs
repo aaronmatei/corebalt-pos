@@ -23,6 +23,7 @@ internal sealed class SaleConfiguration : IEntityTypeConfiguration<Sale>
         b.Property(s => s.CashierStaffCode).HasColumnName("cashier_staff_code").HasMaxLength(32).HasDefaultValue("");
         b.Property(s => s.Status).HasColumnName("status").HasConversion<int>();
         b.Property(s => s.Currency).HasColumnName("currency").HasMaxLength(3).IsRequired();
+        b.Property(s => s.CustomerId).HasColumnName("customer_id"); // nullable: walk-in by default
         b.Property(s => s.ReceiptNumber).HasColumnName("receipt_number").HasMaxLength(32);
 
         b.Property(s => s.CreatedAtUtc).HasColumnName("created_at_utc").HasColumnType("timestamptz");

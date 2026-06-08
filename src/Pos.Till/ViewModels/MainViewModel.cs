@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Pos.Till.Api;
 using Pos.Till.Scanning;
+using Pos.Till.Services.Local;
 
 namespace Pos.Till.ViewModels;
 
@@ -16,6 +17,8 @@ public partial class MainViewModel : ObservableObject
 {
     private readonly IPosApiClient _api;
     private readonly TillOptions _options;
+    private readonly LocalStore _local;
+    private readonly Connectivity _net;
 
     // Full catalogue; FilteredProducts is the search- and category-narrowed view bound by the list.
     public ObservableCollection<ProductRowViewModel> Products { get; } = new();
@@ -62,6 +65,16 @@ public partial class MainViewModel : ObservableObject
         nameof(CancelMpesaCommand), nameof(RefreshCommand), nameof(LookupBarcodeCommand))]
     private bool _mpesaInProgress;
 
+    // ── Loyalty customer attached to the sale (optional; null = walk-in) ──
+    [ObservableProperty] private string _customerPhone = "";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasCustomer), nameof(CustomerLabel))]
+    private CustomerDto? _attachedCustomer;
+
+    public bool HasCustomer => AttachedCustomer is not null;
+    public string CustomerLabel => AttachedCustomer is null ? "" : $"{AttachedCustomer.Name} · {AttachedCustomer.LoyaltyPoints} pts";
+
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private string _statusMessage = "Starting…";
     [ObservableProperty] private string? _lastSaleSummary;
@@ -77,15 +90,21 @@ public partial class MainViewModel : ObservableObject
     private void Lock()
     {
         _mpesaCts?.Cancel();
+        _drainCts?.Cancel();              // stop the offline drain loop for this cashier's session
+        _net.Changed -= OnConnectivityChanged;
         LockRequested?.Invoke();
     }
 
     private CancellationTokenSource? _mpesaCts;
 
-    public MainViewModel(IPosApiClient api, TillOptions options)
+    public MainViewModel(IPosApiClient api, TillOptions options, LocalStore local, Connectivity net)
     {
         _api = api;
         _options = options;
+        _local = local;
+        _net = net;
+        _isOnline = net.IsOnline;
+        _net.Changed += OnConnectivityChanged;
         Cart.CollectionChanged += OnCartChanged;
     }
 
@@ -152,9 +171,11 @@ public partial class MainViewModel : ObservableObject
     // ── Lifecycle ─────────────────────────────────────────────────────────────────────────
     public async Task InitializeAsync()
     {
+        QueuedCount = await _local.QueuedCountAsync(); // surface any sales left queued from a prior run
         await LoadCategoriesAsync();
         await RefreshAsync();
         await LoadShiftAsync(); // gate selling on an open shift; prompt to open one if none
+        StartDrainLoop();       // replay queued offline sales as soon as the server is reachable
     }
 
     [RelayCommand(CanExecute = nameof(NotBusy))]
@@ -163,13 +184,38 @@ public partial class MainViewModel : ObservableObject
         await RunBusy(async () =>
         {
             var result = await _api.ListProductsAsync();
-            if (!result.Ok) { StatusMessage = result.Error ?? "Failed to load products."; return; }
+            if (result.Ok)
+            {
+                _net.Report(true);
+                await _local.CacheProductsAsync(result.Value!); // refresh the offline catalogue
+                ShowProducts(result.Value!);
+                StatusMessage = $"Loaded {Products.Count} product(s) from {_options.BaseUrl}.";
+                return;
+            }
 
-            Products.Clear();
-            foreach (var p in result.Value!) Products.Add(new ProductRowViewModel(p));
-            OnPropertyChanged(nameof(FilteredProducts));
-            StatusMessage = $"Loaded {Products.Count} product(s) from {_options.BaseUrl}.";
+            // A transport failure (StatusCode 0 = server unreachable) means we're offline: fall back to the
+            // last cached catalogue so the cashier can keep selling. A real HTTP error is shown as-is.
+            if (result.StatusCode == 0)
+            {
+                _net.Report(false);
+                var cached = await _local.GetCachedProductsAsync();
+                ShowProducts(cached);
+                StatusMessage = cached.Count > 0
+                    ? $"Offline — showing {cached.Count} cached product(s). Sales will sync when reconnected."
+                    : "Offline and no cached catalogue yet. Connect once to download products.";
+            }
+            else
+            {
+                StatusMessage = result.Error ?? "Failed to load products.";
+            }
         });
+    }
+
+    private void ShowProducts(IReadOnlyList<ProductDto> products)
+    {
+        Products.Clear();
+        foreach (var p in products) Products.Add(new ProductRowViewModel(p));
+        OnPropertyChanged(nameof(FilteredProducts));
     }
 
     /// <summary>Load the active categories into the catalogue filter (All + Uncategorized + each).
@@ -213,9 +259,24 @@ public partial class MainViewModel : ObservableObject
             var result = await _api.FindByBarcodeAsync(scan.Raw);
             if (result.Ok)
             {
-                var row = new ProductRowViewModel(result.Value!);
-                BeginAdd(row);
-                StatusMessage = $"Found {row.Name}.";
+                _net.Report(true);
+                BeginAdd(new ProductRowViewModel(result.Value!));
+                StatusMessage = $"Found {result.Value!.Name}.";
+            }
+            else if (result.StatusCode == 0)
+            {
+                // Offline — resolve from the cached catalogue instead.
+                _net.Report(false);
+                var cached = await _local.FindByBarcodeAsync(scan.Raw);
+                if (cached is not null)
+                {
+                    BeginAdd(new ProductRowViewModel(cached));
+                    StatusMessage = $"Found {cached.Name} (offline).";
+                }
+                else
+                {
+                    StatusMessage = $"Offline — barcode {scan.Raw} isn't in the cached catalogue.";
+                }
             }
             else
             {
@@ -272,6 +333,33 @@ public partial class MainViewModel : ObservableObject
         StatusMessage = "Sale cleared.";
     }
 
+    // ── Loyalty customer (attach by phone) ──────────────────────────────────────────────────
+    [RelayCommand(CanExecute = nameof(NotBusy))]
+    private async Task AttachCustomerAsync()
+    {
+        if (string.IsNullOrWhiteSpace(CustomerPhone)) { StatusMessage = "Enter the customer's phone first."; return; }
+        await RunBusy(async () =>
+        {
+            var result = await _api.FindCustomerByPhoneAsync(CustomerPhone.Trim());
+            if (result.Ok)
+            {
+                _net.Report(true);
+                AttachedCustomer = result.Value;
+                StatusMessage = $"Customer {result.Value!.Name} attached ({result.Value.LoyaltyPoints} pts).";
+            }
+            else if (result.StatusCode == 404) StatusMessage = $"No customer with phone {CustomerPhone.Trim()}.";
+            else if (result.StatusCode == 0) StatusMessage = "Can't look up customers while offline.";
+            else StatusMessage = result.Error ?? "Lookup failed.";
+        });
+    }
+
+    [RelayCommand]
+    private void DetachCustomer()
+    {
+        AttachedCustomer = null;
+        CustomerPhone = "";
+    }
+
     // ── Cash checkout (synchronous) ─────────────────────────────────────────────────────────
     private bool CanComplete() => !IsBusy && !MpesaInProgress && Cart.Count > 0 && HasOpenShift;
 
@@ -283,13 +371,25 @@ public partial class MainViewModel : ObservableObject
         var tenders = new List<CheckoutTenderDto>();
         if (CashAmount > 0m) tenders.Add(new CheckoutTenderDto(TenderType.Cash, CashAmount, null));
 
-        var request = new CheckoutRequestDto(_options.RegisterId, lines, tenders, _options.Currency);
+        // Stamp the sale with an edge-generated UUIDv7 NOW, before sending. If the server is unreachable the
+        // same id lets us queue the sale and replay it idempotently on reconnect (no double-charge).
+        var saleId = Guid.CreateVersion7();
+        var subtotal = Subtotal;
+        var request = new CheckoutRequestDto(_options.RegisterId, lines, tenders, _options.Currency, saleId, AttachedCustomer?.Id);
 
         await RunBusy(async () =>
         {
+            // Already known to be offline → don't even attempt; queue straight away.
+            if (!_net.IsOnline)
+            {
+                await QueueOfflineSaleAsync(request, subtotal);
+                return;
+            }
+
             var result = await _api.CheckoutAsync(request);
             if (result.Ok)
             {
+                _net.Report(true);
                 var sale = result.Value!;
                 // Server response is authoritative — display ITS total/change, not the preview.
                 LastSaleSummary =
@@ -300,8 +400,15 @@ public partial class MainViewModel : ObservableObject
                 await ShowReceiptAsync(sale.SaleId);
                 ClearSaleAfterSuccess();
             }
+            else if (result.StatusCode == 0)
+            {
+                // The server dropped mid-checkout — fall back to the offline queue rather than losing the sale.
+                _net.Report(false);
+                await QueueOfflineSaleAsync(request, subtotal);
+            }
             else
             {
+                // A real rejection (e.g. 409 no open shift, 400 bad request) — surface it, never queue it.
                 StatusMessage = $"Checkout failed ({result.StatusCode}): {result.Error}";
             }
         });
@@ -309,7 +416,8 @@ public partial class MainViewModel : ObservableObject
 
     // ── M-Pesa checkout (asynchronous STK push → poll) ──────────────────────────────────────
     private bool CanPayWithMpesa() =>
-        !IsBusy && !MpesaInProgress && Cart.Count > 0 && MpesaAmount > 0m && !string.IsNullOrWhiteSpace(MpesaPhone) && HasOpenShift;
+        !IsBusy && !MpesaInProgress && Cart.Count > 0 && MpesaAmount > 0m && !string.IsNullOrWhiteSpace(MpesaPhone)
+        && HasOpenShift && IsOnline; // STK push can't work offline — cash only when disconnected
 
     [RelayCommand(CanExecute = nameof(CanPayWithMpesa))]
     private async Task PayWithMpesaAsync()
@@ -413,6 +521,8 @@ public partial class MainViewModel : ObservableObject
         CashAmount = 0m;
         MpesaAmount = 0m;
         MpesaPhone = "";
+        AttachedCustomer = null;
+        CustomerPhone = "";
         CancelPending();
     }
 

@@ -17,6 +17,15 @@
             <Border Background="#323F4B" CornerRadius="10" Padding="10,3" VerticalAlignment="Center">
               <TextBlock Text="{Binding ShiftIndicator}" Foreground="#9AA5B1" VerticalAlignment="Center" FontSize="12"/>
             </Border>
+            <!-- Connection / offline-queue pill: green online, amber offline or while sales wait to sync. -->
+            <Border CornerRadius="10" Padding="10,3" VerticalAlignment="Center" Background="#2E7D32"
+                    IsVisible="{Binding IsOnline}">
+              <TextBlock Text="{Binding ConnectionLabel}" Foreground="White" VerticalAlignment="Center" FontSize="12"/>
+            </Border>
+            <Border CornerRadius="10" Padding="10,3" VerticalAlignment="Center" Background="#B26A00"
+                    IsVisible="{Binding !IsOnline}">
+              <TextBlock Text="{Binding ConnectionLabel}" Foreground="White" VerticalAlignment="Center" FontSize="12"/>
+            </Border>
           </StackPanel>
           <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
             <ProgressBar Width="140" IsIndeterminate="True" IsVisible="{Binding IsBusy}" VerticalAlignment="Center"/>
@@ -131,6 +140,21 @@
               </Grid>
 
               <Button Content="Remove selected line" Command="{Binding RemoveSelectedLineCommand}"/>
+
+              <Separator/>
+
+              <!-- Loyalty customer (optional): look up by phone to earn points on this sale. -->
+              <TextBlock Text="Customer (loyalty)" FontWeight="SemiBold"/>
+              <Grid ColumnDefinitions="*,Auto,Auto" IsVisible="{Binding !HasCustomer}">
+                <TextBox Watermark="Phone (optional)" Text="{Binding CustomerPhone}"/>
+                <Button Grid.Column="1" Content="Attach" Margin="6,0,0,0" Command="{Binding AttachCustomerCommand}"/>
+              </Grid>
+              <Border IsVisible="{Binding HasCustomer}" Background="#EAF2FF" CornerRadius="6" Padding="8,5">
+                <Grid ColumnDefinitions="*,Auto">
+                  <TextBlock Text="{Binding CustomerLabel}" VerticalAlignment="Center" Foreground="#16223f" FontWeight="SemiBold"/>
+                  <Button Grid.Column="1" Content="Remove" Command="{Binding DetachCustomerCommand}"/>
+                </Grid>
+              </Border>
 
               <Separator/>
 

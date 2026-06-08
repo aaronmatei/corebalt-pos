@@ -31,6 +31,10 @@ public sealed class Sale : AggregateRoot, ITenantScoped, IStoreScoped, IAuditabl
     public SaleStatus Status { get; private set; }
     public string Currency { get; private set; }
 
+    /// <summary>The loyalty member this sale is attributed to (null = walk-in). A loose tenant-level ref —
+    /// no navigation; points accrue to the Customer aggregate at completion.</summary>
+    public Guid? CustomerId { get; private set; }
+
     /// <summary>
     /// Human-readable, store-authoritative receipt number (e.g. "MB-000123"), stamped in the checkout
     /// transaction from a per-(tenant,store) sequence. Distinct from <see cref="Entity.Id"/> (the
@@ -106,9 +110,13 @@ public sealed class Sale : AggregateRoot, ITenantScoped, IStoreScoped, IAuditabl
 
     public static Sale Start(Guid tenantId, Guid storeId, Guid registerId, Guid cashierId,
         string currency = "KES", string cashierName = "", string cashierStaffCode = "",
-        string registerName = "", Guid registerSessionId = default) => new()
+        string registerName = "", Guid registerSessionId = default, Guid saleId = default,
+        Guid? customerId = null) => new()
     {
-        Id = Uuid7.NewGuid(),
+        // The till is an edge node (invariant #1): when it supplies a UUIDv7 we use it as the sale id,
+        // which makes checkout idempotent so an offline-queued sale can be replayed on reconnect without
+        // double-charging. A blank id (server-driven flows) still mints a fresh one here.
+        Id = saleId == default ? Uuid7.NewGuid() : saleId,
         TenantId = tenantId,
         StoreId = storeId,
         RegisterId = registerId,
@@ -119,6 +127,7 @@ public sealed class Sale : AggregateRoot, ITenantScoped, IStoreScoped, IAuditabl
         CashierStaffCode = cashierStaffCode,
         Status = SaleStatus.Open,
         Currency = currency,
+        CustomerId = customerId,
         CreatedAtUtc = DateTimeOffset.UtcNow,
         CreatedBy = cashierId
     };

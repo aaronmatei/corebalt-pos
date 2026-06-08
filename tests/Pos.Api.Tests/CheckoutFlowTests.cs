@@ -73,6 +73,43 @@ public sealed class CheckoutFlowTests(PosApiFixture fx)
     }
 
     [Fact]
+    public async Task Checkout_with_a_client_sale_id_is_idempotent_when_replayed()
+    {
+        // The offline-first till generates the sale's UUIDv7 and may re-POST the SAME checkout when it
+        // drains its offline queue (or retries after a dropped response). The second call must NOT create
+        // a second sale or move stock twice — it returns the already-committed sale.
+        var (client, _, _, _) = fx.NewClient();
+        var sku = $"TEST-{Guid.NewGuid():N}"[..16];
+        var product = await CreateProduct(client, sku, 60m);
+        var register = await client.OpenShiftAsync();
+
+        var saleId = Guid.CreateVersion7(); // edge-generated, exactly as the till does
+        var req = new CheckoutRequest(
+            RegisterId: register,
+            Lines: [new CheckoutLineRequest(product.Id, 2)],
+            Tenders: [new CheckoutTenderRequest(TenderType.Cash, 120m)],
+            Currency: "KES",
+            SaleId: saleId);
+
+        var first = await client.PostAsJsonAsync("/api/v1/sales/checkout", req, PosApiFixture.Json);
+        first.StatusCode.Should().Be(HttpStatusCode.Created);
+        var firstBody = (await first.Content.ReadFromJsonAsync<CompleteSaleResponse>(PosApiFixture.Json))!;
+        firstBody.SaleId.Should().Be(saleId, "the server honours the edge-generated id");
+
+        // Replay the identical request — simulates the queue drain re-sending a committed sale.
+        var second = await client.PostAsJsonAsync("/api/v1/sales/checkout", req, PosApiFixture.Json);
+        second.StatusCode.Should().Be(HttpStatusCode.Created);
+        var secondBody = (await second.Content.ReadFromJsonAsync<CompleteSaleResponse>(PosApiFixture.Json))!;
+        secondBody.SaleId.Should().Be(saleId);
+        secondBody.Total.Should().Be(firstBody.Total);
+
+        // On-hand proves stock moved exactly ONCE despite two POSTs — one -2 movement, not -4.
+        var onHandResp = await client.GetAsync($"/api/v1/inventory/{product.Id}/on-hand");
+        var onHand = (await onHandResp.Content.ReadFromJsonAsync<StockOnHandResponse>(PosApiFixture.Json))!;
+        onHand.OnHand.Should().Be(-2m, "idempotent replay must not double-charge or double-deduct stock");
+    }
+
+    [Fact]
     public async Task Cannot_complete_an_underpaid_sale_returns_409()
     {
         var (client, _, _, _) = fx.NewClient();

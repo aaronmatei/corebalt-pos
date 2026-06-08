@@ -12,9 +12,12 @@ public interface IPosApiClient
     Task<ApiResult<FingerprintLoginDto>> FingerprintLoginAsync(string probeBase64, CancellationToken ct = default);
     void SetAccessToken(string token);
     void ClearAccessToken();
+    /// <summary>Cheap liveness probe (anonymous /healthz) so the till can notice the server came back.</summary>
+    Task<bool> PingAsync(CancellationToken ct = default);
     Task<ApiResult<IReadOnlyList<ProductDto>>> ListProductsAsync(CancellationToken ct = default);
     Task<ApiResult<IReadOnlyList<CategoryDto>>> ListCategoriesAsync(CancellationToken ct = default);
     Task<ApiResult<ProductDto>> FindByBarcodeAsync(string barcode, CancellationToken ct = default);
+    Task<ApiResult<CustomerDto>> FindCustomerByPhoneAsync(string phone, CancellationToken ct = default);
     Task<ApiResult<CompleteSaleDto>> CheckoutAsync(CheckoutRequestDto request, CancellationToken ct = default);
     Task<ApiResult<SaleDto>> GetSaleAsync(Guid saleId, CancellationToken ct = default);
     Task<ApiResult<MpesaInitiateDto>> InitiateMpesaAsync(MpesaCheckoutRequestDto request, CancellationToken ct = default);
@@ -68,6 +71,21 @@ public sealed class PosApiClient : IPosApiClient, IDisposable
 
     public void ClearAccessToken() => _http.DefaultRequestHeaders.Authorization = null;
 
+    public async Task<bool> PingAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(3)); // a probe must fail fast, not hang the drain loop
+            using var resp = await _http.GetAsync("/healthz", cts.Token);
+            return resp.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false; // unreachable / timed out — still offline
+        }
+    }
+
     public Task<ApiResult<IReadOnlyList<ProductDto>>> ListProductsAsync(CancellationToken ct = default) =>
         SendAsync<IReadOnlyList<ProductDto>>(() => _http.GetAsync($"{ApiBase}/products", ct), ct);
 
@@ -76,6 +94,9 @@ public sealed class PosApiClient : IPosApiClient, IDisposable
 
     public Task<ApiResult<ProductDto>> FindByBarcodeAsync(string barcode, CancellationToken ct = default) =>
         SendAsync<ProductDto>(() => _http.GetAsync($"{ApiBase}/products/barcode/{Uri.EscapeDataString(barcode)}", ct), ct);
+
+    public Task<ApiResult<CustomerDto>> FindCustomerByPhoneAsync(string phone, CancellationToken ct = default) =>
+        SendAsync<CustomerDto>(() => _http.GetAsync($"{ApiBase}/customers/by-phone/{Uri.EscapeDataString(phone)}", ct), ct);
 
     public Task<ApiResult<CompleteSaleDto>> CheckoutAsync(CheckoutRequestDto request, CancellationToken ct = default) =>
         SendAsync<CompleteSaleDto>(() => _http.PostAsJsonAsync($"{ApiBase}/sales/checkout", request, Json, ct), ct);

@@ -36,7 +36,14 @@ public sealed record CheckoutRequestDto(
     Guid RegisterId,
     IReadOnlyList<CheckoutLineDto> Lines,
     IReadOnlyList<CheckoutTenderDto> Tenders,
-    string Currency);
+    string Currency,
+    // Edge-generated UUIDv7 the till stamps on the sale BEFORE sending, so a sale queued while offline
+    // replays idempotently on reconnect (the server returns the committed sale, never a duplicate).
+    Guid SaleId,
+    // Optional loyalty member (null = walk-in); travels in the offline payload too so points accrue on sync.
+    Guid? CustomerId = null);
+
+public sealed record CustomerDto(Guid Id, string Name, string? Phone, string? Email, string? KraPin, string? NationalId, int LoyaltyPoints, bool IsActive);
 
 public sealed record CompleteSaleDto(Guid SaleId, decimal Total, decimal ChangeDue, string Currency);
 

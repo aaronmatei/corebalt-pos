@@ -1,0 +1,72 @@
+@page "/reports/vat"
+@attribute [Authorize(Policy = "BackOfficeManager")]
+@inject Pos.Application.Reports.VatReportService Reports
+@inject Pos.Application.Abstractions.ICurrentContext Ctx
+@using System.Globalization
+
+<h1>VAT report</h1>
+<p style="color:var(--muted)">Output tax by class for a date range (EAT). Use the CSV for KRA filing.</p>
+
+<form method="get" style="margin-bottom:12px">
+    <label>From</label>
+    <input type="date" name="from" value="@_from" />
+    <label>To</label>
+    <input type="date" name="to" value="@_to" />
+    <button type="submit">Show</button>
+    <a class="button" style="margin-left:8px" href="/backoffice/reports/vat.csv?from=@_from&to=@_to">Download CSV</a>
+</form>
+
+@if (_report is not null)
+{
+    <div class="card">
+        <p><strong>@_from</strong> to <strong>@_to</strong> · @_report.SaleCount sale(s) · @_report.Currency</p>
+        <table>
+            <thead><tr>
+                <th>Tax class</th><th style="text-align:right">Rate %</th>
+                <th style="text-align:right">Taxable</th><th style="text-align:right">VAT</th><th style="text-align:right">Gross</th><th style="text-align:right">Sales</th>
+            </tr></thead>
+            <tbody>
+                @foreach (var l in _report.Lines)
+                {
+                    <tr>
+                        <td>@l.TaxClass</td>
+                        <td style="text-align:right">@l.RatePercent.ToString("0.##", CultureInfo.InvariantCulture)</td>
+                        <td style="text-align:right">@Money(l.Taxable)</td>
+                        <td style="text-align:right">@Money(l.Vat)</td>
+                        <td style="text-align:right">@Money(l.Gross)</td>
+                        <td style="text-align:right">@l.SaleCount</td>
+                    </tr>
+                }
+                @if (_report.Lines.Count == 0) { <tr><td colspan="6" style="color:var(--muted)">No sales in this range.</td></tr> }
+            </tbody>
+            <tfoot>
+                <tr style="font-weight:bold;border-top:2px solid var(--border)">
+                    <td>TOTAL</td><td></td>
+                    <td style="text-align:right">@Money(_report.TotalTaxable)</td>
+                    <td style="text-align:right">@Money(_report.TotalVat)</td>
+                    <td style="text-align:right">@Money(_report.TotalGross)</td>
+                    <td style="text-align:right">@_report.SaleCount</td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery] public string? From { get; set; }
+    [SupplyParameterFromQuery] public string? To { get; set; }
+
+    private Pos.Application.Reports.VatReport? _report;
+    private string _from = "";
+    private string _to = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var (fromDate, toDate, fromUtc, toExclusiveUtc) = Endpoints.ReportEndpoints.EatRange(From, To);
+        _from = fromDate.ToString("yyyy-MM-dd");
+        _to = toDate.ToString("yyyy-MM-dd");
+        _report = await Reports.BuildAsync(Ctx.TenantId, Ctx.StoreId, fromDate, toDate, fromUtc, toExclusiveUtc);
+    }
+
+    private static string Money(decimal d) => d.ToString("#,##0.00", CultureInfo.InvariantCulture);
+}

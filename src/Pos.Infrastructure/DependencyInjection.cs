@@ -50,16 +50,24 @@ public static class DependencyInjection
         services.AddScoped<IStockMovementRepository, StockMovementRepository>();
         services.AddScoped<IProductRepository, ProductRepository>();
         services.AddScoped<ICategoryRepository, CategoryRepository>();
+        services.AddScoped<Pos.Application.Customers.ICustomerRepository, CustomerRepository>();
+        services.AddScoped<Pos.Application.Customers.CustomerService>();
+        // Default loyalty rule so design-time/console hosts can construct CheckoutService; the API host
+        // re-registers a config-bound instance after AddInfrastructure (last registration wins).
+        services.AddSingleton(new Pos.Application.Customers.LoyaltyOptions());
         services.AddScoped<INotificationRepository, NotificationRepository>();
         services.AddScoped<IMpesaPaymentRepository, MpesaPaymentRepository>();
         services.AddScoped<IReceiptNumberSequence, ReceiptNumberSequence>();
         services.AddScoped<IOutboxDispatcher, OutboxDispatcher>();
+        services.AddScoped<Pos.Application.Sync.IOutboxSyncStore, Pos.Infrastructure.Sync.OutboxSyncStore>();
 
         // Notifications: the in-app channel is always on; Email/SMS are stubs (disabled until configured).
         // The dispatcher reads ProductLowStock outbox rows and fans them out to every enabled channel.
         // Default (disabled) channel options — the host may rebind these from per-client config.
         services.AddSingleton(new EmailChannelOptions());
         services.AddSingleton(new SmsChannelOptions());
+        // Real-time push default = no-op (the feed still persists); the API host swaps in the SignalR one.
+        services.AddSingleton<Pos.Application.Notifications.INotificationBroadcaster, NullNotificationBroadcaster>();
         services.AddScoped<INotificationChannel, InAppNotificationChannel>();
         services.AddScoped<INotificationChannel, EmailNotificationChannel>();
         services.AddScoped<INotificationChannel, SmsNotificationChannel>();
@@ -106,6 +114,7 @@ public static class DependencyInjection
         services.AddScoped<ICashMovementRepository, CashMovementRepository>();
         services.AddScoped<CashOfficeService>();
         services.AddScoped<CashOfficeReportService>();
+        services.AddScoped<Pos.Application.Reports.VatReportService>();
         services.AddSingleton(new CashOfficeOptions());
         services.AddSingleton(new Pos.Application.Receipts.ReceiptOptions()); // report VAT codes/labels (host may override)
         services.AddScoped<ISetupGuard, SetupGuard>();

@@ -3,6 +3,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Microsoft.Extensions.Configuration;
 using Pos.Till.Api;
+using Pos.Till.Services.Local;
 using Pos.Till.ViewModels;
 using Pos.Till.Views;
 
@@ -28,10 +29,15 @@ public partial class App : Application
             var api = new PosApiClient(options);
             // Fingerprint reader seam — the dev stub today; the real reader SDK drops in here when chosen.
             var scanner = new StubFingerprintScanner();
-            var shell = new ShellViewModel(api, scanner, options); // starts on the sign-in screen
+            // Offline-first: a local SQLite store caches the catalogue and queues sales taken while the
+            // store server is unreachable; Connectivity tracks online/offline for the header + drain loop.
+            var local = new LocalStore(LocalStore.DefaultDbPath());
+            local.InitializeAsync().GetAwaiter().GetResult();
+            var net = new Connectivity();
+            var shell = new ShellViewModel(api, scanner, options, local, net); // starts on the sign-in screen
 
             desktop.MainWindow = new MainWindow { DataContext = shell };
-            desktop.Exit += (_, _) => api.Dispose();
+            desktop.Exit += (_, _) => { api.Dispose(); local.DisposeAsync().AsTask().GetAwaiter().GetResult(); };
         }
 
         base.OnFrameworkInitializationCompleted();

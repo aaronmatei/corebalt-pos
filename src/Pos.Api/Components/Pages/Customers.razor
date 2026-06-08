@@ -1,0 +1,84 @@
+@page "/customers"
+@attribute [Authorize(Policy = "BackOfficeManager")]
+@inject Pos.Application.Customers.CustomerService CustomerSvc
+@using Pos.Domain.Customers
+
+<h1>Customers</h1>
+<p style="color:var(--muted);margin-top:0">Loyalty members, shared across all branches. Attach one at the till (by phone) to earn points; sales without a member are walk-ins.</p>
+
+@if (!string.IsNullOrEmpty(Error)) { <p class="error">@Error</p> }
+
+<div class="card">
+    <h2>New customer</h2>
+    <form method="post" action="/backoffice/customers">
+        <Csrf />
+        <div class="row">
+            <div><label>Name</label><input name="name" required /></div>
+            <div><label>Phone</label><input name="phone" placeholder="07.. / 2547.." /></div>
+            <div><label>Email</label><input name="email" type="email" /></div>
+        </div>
+        <div class="row">
+            <div><label>KRA PIN</label><input name="kraPin" placeholder="A001234567Z" /></div>
+            <div><label>National ID</label><input name="nationalId" /></div>
+        </div>
+        <div style="margin-top:14px"><button type="submit">Create customer</button></div>
+    </form>
+</div>
+
+<form method="get" style="margin:12px 0">
+    <input name="q" value="@Q" placeholder="Search name or phone" />
+    <button type="submit">Search</button>
+</form>
+
+<table>
+    <thead>
+        <tr><th>Name / contact</th><th style="text-align:right">Points</th><th>Adjust</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+        @foreach (var c in _items)
+        {
+            <tr class="@(c.IsActive ? "" : "inactive")">
+                <td>
+                    <form method="post" action="@($"/backoffice/customers/{c.Id}")" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                        <Csrf />
+                        <input name="name" value="@c.Name" required style="min-width:140px" title="Name" />
+                        <input name="phone" value="@c.Phone" placeholder="phone" style="width:120px" title="Phone" />
+                        <input name="email" value="@c.Email" placeholder="email" style="width:150px" title="Email" />
+                        <input name="kraPin" value="@c.KraPin" placeholder="KRA PIN" style="width:110px" title="KRA PIN" />
+                        <input name="nationalId" value="@c.NationalId" placeholder="ID" style="width:90px" title="National ID" />
+                        <select name="isActive" title="Status">
+                            <option value="true" selected="@c.IsActive">Active</option>
+                            <option value="false" selected="@(!c.IsActive)">Inactive</option>
+                        </select>
+                        <button type="submit">Save</button>
+                    </form>
+                </td>
+                <td style="text-align:right"><strong>@c.LoyaltyPoints</strong></td>
+                <td>
+                    <form method="post" action="@($"/backoffice/customers/{c.Id}/points")" style="display:flex;gap:4px;align-items:center">
+                        <Csrf />
+                        <input name="delta" type="number" step="1" value="0" style="width:70px" title="+/- points" />
+                        <button type="submit">Apply</button>
+                    </form>
+                </td>
+                <td>@(c.IsActive ? "Active" : "Inactive")</td>
+            </tr>
+        }
+        @if (_items.Count == 0)
+        {
+            <tr><td colspan="4" style="color:var(--muted)">No customers@(string.IsNullOrWhiteSpace(Q) ? " yet." : " match that search.")</td></tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    [SupplyParameterFromQuery] public string? Error { get; set; }
+    [SupplyParameterFromQuery] public string? Q { get; set; }
+
+    private IReadOnlyList<Customer> _items = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _items = await CustomerSvc.SearchAsync(Q, includeInactive: true, max: 200);
+    }
+}

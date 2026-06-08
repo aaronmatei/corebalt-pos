@@ -28,7 +28,9 @@ internal static class SalesEndpoints
                 req.Currency,
                 req.Lines.Select(l => new CheckoutLine(l.ProductId, l.Quantity)).ToList(),
                 req.Tenders.Select(t => new CheckoutTender(t.Type, t.Amount, t.Reference)).ToList(),
-                ct);
+                ct,
+                req.SaleId,
+                req.CustomerId);
             // Fiscalize right after the sale is committed, so the receipt fetched next has the fiscal block.
             await fiscal.FiscalizeAsync(ctx.TenantId, ctx.StoreId, result.SaleId, ct);
             // Build ESC/POS for the register's printer + send it (NullPrinter by default; never fails the sale).

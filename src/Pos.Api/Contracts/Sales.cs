@@ -16,7 +16,13 @@ public sealed record CheckoutRequest(
     Guid RegisterId,
     IReadOnlyList<CheckoutLineRequest> Lines,
     IReadOnlyList<CheckoutTenderRequest> Tenders,
-    string Currency = "KES");
+    string Currency = "KES",
+    // Edge-generated UUIDv7 for the sale. Lets the till replay an offline-queued sale idempotently
+    // (same id => the server returns the already-committed sale instead of charging twice). Blank =
+    // server mints the id (back-compat for callers that don't supply one).
+    Guid SaleId = default,
+    // Optional loyalty member to attribute the sale to (null = walk-in); points accrue on completion.
+    Guid? CustomerId = null);
 
 public sealed record CompleteSaleResponse(Guid SaleId, decimal Total, decimal ChangeDue, string Currency);
 
