@@ -28,12 +28,14 @@ public sealed class HqSyncPushWorker : BackgroundService
             try
             {
                 using var scope = _scopes.CreateScope();
-                var pusher = scope.ServiceProvider.GetRequiredService<HqSyncPusher>();
-                await pusher.RunOnceAsync(stoppingToken);
+                // Push our outbox up…
+                await scope.ServiceProvider.GetRequiredService<HqSyncPusher>().RunOnceAsync(stoppingToken);
+                // …then pull HQ catalogue changes down (M2).
+                await scope.ServiceProvider.GetRequiredService<HqCatalogPuller>().RunOnceAsync(stoppingToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                _log.LogWarning(ex, "hq.sync.push pass failed; retrying next interval");
+                _log.LogWarning(ex, "hq.sync pass failed; retrying next interval");
             }
 
             try { await Task.Delay(interval, stoppingToken); }

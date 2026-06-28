@@ -57,6 +57,9 @@ public static class DependencyInjection
         services.AddScoped<IStockMovementRepository, StockMovementRepository>();
         services.AddScoped<IProductRepository, ProductRepository>();
         services.AddScoped<ICategoryRepository, CategoryRepository>();
+        // HQ catalogue master + change feed (M2).
+        services.AddScoped<ICatalogItemRepository, CatalogItemRepository>();
+        services.AddScoped<ICatalogChangeRepository, CatalogChangeRepository>();
         services.AddScoped<Pos.Application.Customers.ICustomerRepository, CustomerRepository>();
         services.AddScoped<Pos.Application.Customers.CustomerService>();
         // Default loyalty rule so design-time/console hosts can construct CheckoutService; the API host
@@ -77,6 +80,10 @@ public static class DependencyInjection
         services.AddSingleton(new Pos.Application.Identity.StoreServerOptions());
         services.AddSingleton<Pos.Application.Sync.IHqSyncClient, Pos.Infrastructure.Sync.HqSyncHttpClient>();
         services.AddScoped<Pos.Application.Sync.HqSyncPusher>();
+        // HQ→store catalogue pull (M2): cursor repo, HTTP client, puller.
+        services.AddScoped<ICatalogPullStateRepository, CatalogPullStateRepository>();
+        services.AddSingleton<Pos.Application.Sync.ICatalogPullClient, Pos.Infrastructure.Sync.HqCatalogPullHttpClient>();
+        services.AddScoped<Pos.Application.Sync.HqCatalogPuller>();
         services.AddScoped<Pos.Infrastructure.Sync.HqSalesReadStore>();
         services.AddScoped<Pos.Application.Sync.IHqSalesReadStore>(sp => sp.GetRequiredService<Pos.Infrastructure.Sync.HqSalesReadStore>());
         services.AddScoped<Pos.Application.Sync.IHqSessionsReadStore>(sp => sp.GetRequiredService<Pos.Infrastructure.Sync.HqSalesReadStore>());

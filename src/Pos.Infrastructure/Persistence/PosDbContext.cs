@@ -27,6 +27,10 @@ public sealed class PosDbContext : DbContext, IUnitOfWork
     public DbSet<Sale> Sales => Set<Sale>();
     public DbSet<Product> Products => Set<Product>();
     public DbSet<Category> Categories => Set<Category>();
+    // HQ catalogue master + change feed (M2: central catalog/pricing pushed down to stores).
+    public DbSet<CatalogItem> CatalogItems => Set<CatalogItem>();
+    public DbSet<CatalogChange> CatalogChanges => Set<CatalogChange>();
+    public DbSet<CatalogPullState> CatalogPullStates => Set<CatalogPullState>();
     public DbSet<Pos.Domain.Customers.Customer> Customers => Set<Pos.Domain.Customers.Customer>();
     public DbSet<Pos.Domain.Notifications.Notification> Notifications => Set<Pos.Domain.Notifications.Notification>();
     public DbSet<StockMovement> StockMovements => Set<StockMovement>();

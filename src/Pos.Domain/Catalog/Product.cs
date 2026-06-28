@@ -104,6 +104,23 @@ public sealed class Product : AggregateRoot, ITenantScoped, IStoreScoped
     public void AssignCategory(Guid? categoryId) => CategoryId = categoryId;
 
     /// <summary>
+    /// Apply an authoritative HQ catalogue push (M2): overwrite name / barcode / unit / tax / price / active
+    /// from the central catalogue. Deliberately raises NO domain event — it mirrors an external decision
+    /// (not a local action), so it never churns the store outbox or loops back to HQ. Stock is untouched.
+    /// </summary>
+    public void ApplyHqCatalog(string name, string? barcode, UnitOfMeasure unit, TaxClass taxClass, Money price, bool active)
+    {
+        if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("Name is required.", nameof(name));
+        if (price.Amount < 0) throw new ArgumentOutOfRangeException(nameof(price), "Price cannot be negative.");
+        Name = name.Trim();
+        Barcode = NormalizeBarcode(barcode);
+        UnitOfMeasure = unit;
+        TaxClass = taxClass;
+        Price = price;
+        IsActive = active;
+    }
+
+    /// <summary>
     /// Set (or clear) the reorder threshold + suggested order quantity. Changing the settings re-arms
     /// notification (clears <see cref="LowStockNotified"/>) so the next stock movement re-evaluates against
     /// the new level — an item left below a freshly-set level alerts again on its next dip.

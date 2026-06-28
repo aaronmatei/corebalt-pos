@@ -336,6 +336,39 @@ internal static class BackOfficeEndpoints
                 $"vat-report-{fromDate:yyyyMMdd}-{toDate:yyyyMMdd}.csv");
         }).RequireAuthorization("BackOfficeManager");
 
+        // ── HQ Catalogue (M2): central catalogue, pushed down to branches ──
+        g.MapPost("/catalog", async (CatalogItemService svc, ICurrentContext ctx, IMerchantProfileRepository merchants,
+            [FromForm] string sku, [FromForm] string name, [FromForm] string? priceAmount,
+            [FromForm] string unit, [FromForm] string taxClass, [FromForm] string? barcode, CancellationToken ct) =>
+        {
+            try
+            {
+                var currency = (await merchants.GetAsync(ctx.TenantId, ct))?.Currency ?? "KES";
+                await svc.CreateAsync(sku, name, new Money(RequiredDecimal(priceAmount, "Price"), currency),
+                    Parse<TaxClass>(taxClass), Parse<UnitOfMeasure>(unit), barcode, ct);
+                return Results.Redirect("/hq/catalog");
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return Back("/hq/catalog", ex); }
+        }).RequireAuthorization("BackOfficeManager");
+
+        g.MapPost("/catalog/{id:guid}/price", async (Guid id, CatalogItemService svc, ICurrentContext ctx,
+            IMerchantProfileRepository merchants, [FromForm] string? priceAmount, CancellationToken ct) =>
+        {
+            try
+            {
+                var currency = (await merchants.GetAsync(ctx.TenantId, ct))?.Currency ?? "KES";
+                await svc.RepriceAsync(id, new Money(RequiredDecimal(priceAmount, "Price"), currency), ct);
+                return Results.Redirect("/hq/catalog");
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return Back("/hq/catalog", ex); }
+        }).RequireAuthorization("BackOfficeManager");
+
+        g.MapPost("/catalog/{id:guid}/active", async (Guid id, CatalogItemService svc, [FromForm] string? active, CancellationToken ct) =>
+        {
+            await svc.SetActiveAsync(id, active is "true" or "on", ct);
+            return Results.Redirect("/hq/catalog");
+        }).RequireAuthorization("BackOfficeManager");
+
         return app;
     }
 

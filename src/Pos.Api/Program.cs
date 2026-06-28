@@ -88,6 +88,7 @@ builder.Services.AddInfrastructure(conn, dataProtectionKeysPath);
 builder.Services.AddScoped<CheckoutService>();
 builder.Services.AddScoped<Pos.Application.Catalog.ProductService>();
 builder.Services.AddScoped<Pos.Application.Catalog.CategoryService>();
+builder.Services.AddScoped<Pos.Application.Catalog.CatalogItemService>(); // HQ catalogue master (M2)
 builder.Services.AddScoped<Pos.Application.Customers.CustomerService>();
 // Loyalty accrual rule (1 point per 100 KES by default); host may override via the "Loyalty" config section.
 builder.Services.AddSingleton(builder.Configuration.GetSection("Loyalty").Get<Pos.Application.Customers.LoyaltyOptions>()
@@ -350,6 +351,7 @@ app.UseAntiforgery(); // protects the back-office form posts
 var v1 = app.MapGroup("/api/v1").RequireAuthorization();
 v1.MapCatalog();
 v1.MapCategories();
+v1.MapCatalogMaster(); // HQ central catalogue (M2)
 v1.MapCustomers();
 v1.MapSales();
 v1.MapReceipts();
@@ -370,8 +372,9 @@ app.MapUsers();  // /api/v1/users (Manager only)
 if (deployment.IsHq)
 {
     app.MapAdmin();
-    app.MapHqSync();   // store→cloud sync ingest (POST /hq/sync/ingest, sync-token auth)
-    app.MapTlsCheck(); // on-demand-TLS `ask` for Caddy (GET /hq/tls-check?domain=)
+    app.MapHqSync();      // store→cloud sync ingest (POST /hq/sync/ingest, sync-token auth)
+    app.MapCatalogPull(); // HQ→store catalogue pull (GET /hq/catalog/changes, sync-token auth)
+    app.MapTlsCheck();    // on-demand-TLS `ask` for Caddy (GET /hq/tls-check?domain=)
 }
 
 // Blazor back-office: Razor Component pages + the form-post endpoints behind them.
