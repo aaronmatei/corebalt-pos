@@ -1,0 +1,55 @@
+@page "/hq/sync-status"
+@attribute [Authorize(Policy = "BackOfficeManager")]
+@inject Pos.Application.Sync.IHqSyncStatusReadStore Status
+@inject Pos.Application.Abstractions.ICurrentContext Ctx
+
+<h1>Sync status</h1>
+<p style="color:var(--muted)">Whether each branch is pushing its data up, and how fresh it is.</p>
+
+@if (_status is not null)
+{
+    <div class="card" style="margin-bottom:12px">
+        <p>Branches syncing: <strong>@_status.Stores.Count</strong> · Changes received: <strong>@_status.TotalChanges</strong>
+           · Last received: <strong>@(_status.LastReceivedAtUtc?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "never")</strong></p>
+    </div>
+
+    <table>
+        <thead><tr><th>Branch (StoreId)</th><th style="text-align:right">Changes</th><th>Last received (UTC)</th><th>Freshness</th></tr></thead>
+        <tbody>
+            @foreach (var s in _status.Stores)
+            {
+                var ageHours = (_now - s.LastReceivedAtUtc).TotalHours;
+                <tr>
+                    <td>@s.StoreId</td>
+                    <td style="text-align:right">@s.Changes</td>
+                    <td>@s.LastReceivedAtUtc.ToString("yyyy-MM-dd HH:mm")</td>
+                    <td>@if (ageHours <= StaleHours)
+                        {
+                            <span style="color:var(--ok,#1e8e3e)">● up to date</span>
+                        }
+                        else
+                        {
+                            <span style="color:var(--danger,#c0392b)">● stale (@($"{ageHours:0}h"))</span>
+                        }
+                    </td>
+                </tr>
+            }
+            @if (_status.Stores.Count == 0)
+            {
+                <tr><td colspan="4" style="color:var(--muted)">No branch has synced yet.</td></tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private const double StaleHours = 24;
+    private Pos.Application.Sync.HqSyncStatus? _status;
+    private DateTimeOffset _now = DateTimeOffset.UtcNow;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _now = DateTimeOffset.UtcNow;
+        _status = await Status.GetAsync(Ctx.TenantId);
+    }
+}

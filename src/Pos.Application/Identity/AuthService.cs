@@ -4,32 +4,34 @@ using Pos.Domain.Identity;
 namespace Pos.Application.Identity;
 
 /// <summary>
-/// Login + user/password lifecycle for the store-server's tenant/store. Login returns null on ANY
-/// failure (unknown staff/user, inactive, no credential set, or mismatch) — the endpoint maps that to
-/// a single 401 so we never leak which part was wrong.
+/// Login + user/password lifecycle for the ACTIVE tenant/store. The scope is the ambient
+/// <see cref="ICurrentTenant"/>: the configured store-server in on-prem (StoreServer) mode, the request
+/// subdomain's tenant in cloud (Hq) mode. Login returns null on ANY failure (unknown staff/user,
+/// inactive, no credential set, or mismatch) — the endpoint maps that to a single 401 so we never leak
+/// which part was wrong.
 /// </summary>
 public sealed class AuthService
 {
     private readonly IUserRepository _users;
     private readonly IPasswordHasher _hasher;
     private readonly ITokenIssuer _tokens;
-    private readonly StoreServerOptions _server;
+    private readonly ICurrentTenant _scope;
     private readonly IUnitOfWork _uow;
 
     public AuthService(IUserRepository users, IPasswordHasher hasher, ITokenIssuer tokens,
-        StoreServerOptions server, IUnitOfWork uow)
+        ICurrentTenant scope, IUnitOfWork uow)
     {
         _users = users;
         _hasher = hasher;
         _tokens = tokens;
-        _server = server;
+        _scope = scope;
         _uow = uow;
     }
 
     public async Task<AccessToken?> PinLoginAsync(string staffCode, string pin, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(staffCode) || string.IsNullOrWhiteSpace(pin)) return null;
-        var user = await _users.FindByStaffCodeAsync(_server.TenantId, _server.StoreId, staffCode.Trim(), ct);
+        var user = await _users.FindByStaffCodeAsync(_scope.TenantId, _scope.StoreId, staffCode.Trim(), ct);
         if (user is null || !user.IsActive || user.PinHash is null) return null;
         return _hasher.Verify(user.PinHash, pin) ? _tokens.Issue(user) : null;
     }
@@ -45,22 +47,22 @@ public sealed class AuthService
     public async Task<User?> ValidatePasswordAsync(string username, string password, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password)) return null;
-        var user = await _users.FindByUsernameAsync(_server.TenantId, username.Trim().ToLowerInvariant(), ct);
+        var user = await _users.FindByUsernameAsync(_scope.TenantId, username.Trim().ToLowerInvariant(), ct);
         if (user is null || !user.IsActive || user.PasswordHash is null) return null;
         return _hasher.Verify(user.PasswordHash, password) ? user : null;
     }
 
     public Task<IReadOnlyList<User>> ListUsersAsync(CancellationToken ct = default) =>
-        _users.ListAsync(_server.TenantId, _server.StoreId, ct);
+        _users.ListAsync(_scope.TenantId, _scope.StoreId, ct);
 
     public Task<User?> GetUserAsync(Guid userId, CancellationToken ct = default) =>
-        _users.GetByIdAsync(_server.TenantId, _server.StoreId, userId, ct);
+        _users.GetByIdAsync(_scope.TenantId, _scope.StoreId, userId, ct);
 
     /// <summary>Manager action: reset a user's till PIN.</summary>
     public async Task<bool> ResetPinAsync(Guid userId, string newPin, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(newPin)) throw new ArgumentException("PIN is required.", nameof(newPin));
-        var user = await _users.GetByIdAsync(_server.TenantId, _server.StoreId, userId, ct);
+        var user = await _users.GetByIdAsync(_scope.TenantId, _scope.StoreId, userId, ct);
         if (user is null) return false;
         user.SetPinHash(_hasher.Hash(newPin));
         await _uow.SaveChangesAsync(ct);
@@ -69,7 +71,7 @@ public sealed class AuthService
 
     public async Task<bool> DeactivateUserAsync(Guid userId, CancellationToken ct = default)
     {
-        var user = await _users.GetByIdAsync(_server.TenantId, _server.StoreId, userId, ct);
+        var user = await _users.GetByIdAsync(_scope.TenantId, _scope.StoreId, userId, ct);
         if (user is null) return false;
         user.Deactivate();
         await _uow.SaveChangesAsync(ct);
@@ -78,7 +80,7 @@ public sealed class AuthService
 
     public async Task<bool> ReactivateUserAsync(Guid userId, CancellationToken ct = default)
     {
-        var user = await _users.GetByIdAsync(_server.TenantId, _server.StoreId, userId, ct);
+        var user = await _users.GetByIdAsync(_scope.TenantId, _scope.StoreId, userId, ct);
         if (user is null) return false;
         user.Reactivate();
         await _uow.SaveChangesAsync(ct);
@@ -90,12 +92,12 @@ public sealed class AuthService
     {
         username = (username ?? "").Trim().ToLowerInvariant();
         staffCode = (staffCode ?? "").Trim();
-        if (await _users.UsernameExistsAsync(_server.TenantId, username, ct))
+        if (await _users.UsernameExistsAsync(_scope.TenantId, username, ct))
             throw new InvalidOperationException($"Username '{username}' is already taken.");
-        if (await _users.FindByStaffCodeAsync(_server.TenantId, _server.StoreId, staffCode, ct) is not null)
+        if (await _users.FindByStaffCodeAsync(_scope.TenantId, _scope.StoreId, staffCode, ct) is not null)
             throw new InvalidOperationException($"Staff code '{staffCode}' is already taken.");
 
-        var user = User.Create(_server.TenantId, _server.StoreId, name, username, staffCode, role);
+        var user = User.Create(_scope.TenantId, _scope.StoreId, name, username, staffCode, role);
         if (!string.IsNullOrWhiteSpace(pin)) user.SetPinHash(_hasher.Hash(pin));
         if (!string.IsNullOrWhiteSpace(password)) user.SetPasswordHash(_hasher.Hash(password));
         await _users.AddAsync(user, ct);
@@ -120,8 +122,8 @@ public sealed class AuthService
     /// <summary>Seed the first Manager (config username + default password, must-change) if none exists.</summary>
     public async Task EnsureBootstrapManagerAsync(string username, string password, CancellationToken ct = default)
     {
-        if (await _users.AnyManagerExistsAsync(_server.TenantId, _server.StoreId, ct)) return;
-        var manager = User.Create(_server.TenantId, _server.StoreId, "Store Manager", username, "0000", UserRole.Manager);
+        if (await _users.AnyManagerExistsAsync(_scope.TenantId, _scope.StoreId, ct)) return;
+        var manager = User.Create(_scope.TenantId, _scope.StoreId, "Store Manager", username, "0000", UserRole.Manager);
         manager.SetPasswordHash(_hasher.Hash(password), mustChange: true);
         await _users.AddAsync(manager, ct);
         await _uow.SaveChangesAsync(ct);
@@ -130,10 +132,10 @@ public sealed class AuthService
     /// <summary>DEV ONLY: seed a demo cashier with a PIN so the till's PIN login is usable out of the box.</summary>
     public async Task EnsureDevCashierAsync(string name, string staffCode, string pin, CancellationToken ct = default)
     {
-        if (await _users.FindByStaffCodeAsync(_server.TenantId, _server.StoreId, staffCode, ct) is not null) return;
+        if (await _users.FindByStaffCodeAsync(_scope.TenantId, _scope.StoreId, staffCode, ct) is not null) return;
         var username = $"cashier-{staffCode.ToLowerInvariant()}";
-        if (await _users.UsernameExistsAsync(_server.TenantId, username, ct)) return;
-        var cashier = User.Create(_server.TenantId, _server.StoreId, name, username, staffCode, UserRole.Cashier);
+        if (await _users.UsernameExistsAsync(_scope.TenantId, username, ct)) return;
+        var cashier = User.Create(_scope.TenantId, _scope.StoreId, name, username, staffCode, UserRole.Cashier);
         cashier.SetPinHash(_hasher.Hash(pin));
         await _users.AddAsync(cashier, ct);
         await _uow.SaveChangesAsync(ct);

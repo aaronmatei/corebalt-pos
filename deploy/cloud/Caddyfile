@@ -1,0 +1,21 @@
+# Terminates TLS for the cloud tier and reverse-proxies to the API container.
+#
+# ONE wildcard certificate (*.pos.corebalt.co.ke) + the apex (pos.corebalt.co.ke) covers every tenant
+# subdomain — no per-tenant cert work, ever. Obtained via the ACME DNS-01 challenge against Cloudflare
+# (the *.pos records are grey-cloud / DNS-only so this origin serves the cert directly).
+#
+# Caddy forwards the original Host header upstream unchanged, so the API's TenantResolutionMiddleware
+# sees "acme.pos.corebalt.co.ke" and resolves the "acme" tenant.
+
+{
+	email {$ACME_EMAIL}
+}
+
+*.{$TENANT_BASE_DOMAIN}, {$TENANT_BASE_DOMAIN} {
+	tls {
+		dns cloudflare {$CLOUDFLARE_API_TOKEN}
+		resolvers 1.1.1.1
+	}
+	encode zstd gzip
+	reverse_proxy api:8080
+}

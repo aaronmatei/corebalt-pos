@@ -1,0 +1,78 @@
+# HQ/cloud (multi-tenant SaaS) stack: Postgres + the Pos.Api HQ host + Caddy (wildcard TLS).
+# Build context is the REPO ROOT so the API image can see the whole solution.
+#
+#   cd deploy/cloud && cp .env.example .env   # then fill .env in
+#   docker compose -f docker-compose.cloud.yml up -d --build
+#
+# See deploy/CLOUD.md for the Cloudflare DNS records and tenant onboarding.
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: pos
+      POSTGRES_USER: pos
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pos -d pos"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ../..
+      dockerfile: deploy/cloud/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      # Double-underscore maps to config sections (Deployment:Mode, Admin:ApiToken, Jwt:Key, Ops:*).
+      POS_DB: "Host=db;Port=5432;Database=pos;Username=pos;Password=${POSTGRES_PASSWORD}"
+      Deployment__Mode: "Hq"
+      Deployment__TenantBaseDomain: "${TENANT_BASE_DOMAIN:?set TENANT_BASE_DOMAIN in .env}"
+      Admin__ApiToken: "${ADMIN_API_TOKEN:?set ADMIN_API_TOKEN in .env}"
+      Jwt__Key: "${JWT_KEY:?set JWT_KEY (>=32 chars) in .env}"
+      # Persist these on volumes — the DP key ring decrypts every tenant's M-Pesa/eTIMS secrets, so
+      # losing it is unrecoverable.
+      Ops__DataProtectionKeysPath: "/keys"
+      Ops__BackupDirectory: "/backups"
+      Ops__LogDirectory: "/logs"
+      Ops__PgDumpPath: "pg_dump"
+      Ops__AutoMigrate: "true"
+    volumes:
+      - dpkeys:/keys
+      - backups:/backups
+      - logs:/logs
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  caddy:
+    build:
+      context: .
+      dockerfile: caddy.Dockerfile
+    environment:
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:?set CLOUDFLARE_API_TOKEN in .env}
+      TENANT_BASE_DOMAIN: ${TENANT_BASE_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  dpkeys:
+  backups:
+  logs:
+  caddydata:
+  caddyconfig:

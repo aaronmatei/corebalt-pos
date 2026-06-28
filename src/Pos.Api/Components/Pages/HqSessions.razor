@@ -1,0 +1,48 @@
+@page "/hq/sessions"
+@attribute [Authorize(Policy = "BackOfficeManager")]
+@inject Pos.Application.Sync.IHqSessionsReadStore Sessions
+@inject Pos.Application.Abstractions.ICurrentContext Ctx
+
+<h1>Branch cash-ups</h1>
+<p style="color:var(--muted)">Closed shifts (Z) synced up from this tenant's branches.</p>
+
+@if (_rows is not null)
+{
+    <table>
+        <thead><tr>
+            <th>Closed (UTC)</th><th>Till</th><th>Opened by</th><th>Closed by</th>
+            <th style="text-align:right">Float</th><th style="text-align:right">Expected</th>
+            <th style="text-align:right">Counted</th><th style="text-align:right">Variance</th>
+        </tr></thead>
+        <tbody>
+            @foreach (var s in _rows)
+            {
+                <tr>
+                    <td>@(s.ClosedAtUtc?.ToString("yyyy-MM-dd HH:mm") ?? "—")</td>
+                    <td>@s.RegisterLabel</td>
+                    <td>@s.OpenedByName</td>
+                    <td>@(s.ClosedByName ?? "—")</td>
+                    <td style="text-align:right">@Money(s.OpeningFloat)</td>
+                    <td style="text-align:right">@Money(s.ExpectedCash)</td>
+                    <td style="text-align:right">@Money(s.CountedCash)</td>
+                    <td style="text-align:right; @(s.Variance != 0 ? "color:var(--danger,#c0392b)" : "")">
+                        @s.Currency @Money(s.Variance)@(s.Variance != 0 && s.VarianceAcknowledged ? " ✓" : "")
+                    </td>
+                </tr>
+            }
+            @if (_rows.Count == 0)
+            {
+                <tr><td colspan="8" style="color:var(--muted)">No cash-ups have synced yet.</td></tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private IReadOnlyList<Pos.Application.Sync.HqSessionRow>? _rows;
+
+    protected override async Task OnInitializedAsync() =>
+        _rows = await Sessions.RecentAsync(Ctx.TenantId, take: 200);
+
+    private static string Money(decimal d) => d.ToString("#,##0.00", System.Globalization.CultureInfo.InvariantCulture);
+}

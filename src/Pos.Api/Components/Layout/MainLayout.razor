@@ -1,5 +1,7 @@
 @inherits LayoutComponentBase
 @inject IServiceScopeFactory ScopeFactory
+@inject Pos.Application.Abstractions.ICurrentTenant Tenant
+@inject Pos.Application.Abstractions.DeploymentOptions Deployment
 
 <div class="layout">
     <AuthorizeView>
@@ -7,7 +9,8 @@
             <aside class="sidebar">
                 <div class="brand">
                     <img src="/favicon.ico" class="logo" alt="Corebalt" />
-                    <span>Corebalt</span>
+                    @* In Hq (cloud) mode the resolved subdomain tenant is named here; on-prem keeps the vendor mark. *@
+                    <span>@(string.IsNullOrWhiteSpace(Tenant.DisplayName) ? "Corebalt" : Tenant.DisplayName)</span>
                 </div>
                 <nav>
                     <NavLink href="/products" Match="NavLinkMatch.Prefix">Products</NavLink>
@@ -23,6 +26,14 @@
                     <NavLink href="/users">Cashiers</NavLink>
                     <NavLink href="/sessions">Sessions</NavLink>
                     <NavLink href="/day-summary">Day summary</NavLink>
+                    @if (Deployment.IsHq)
+                    {
+                        <NavLink href="/hq/sales">Synced sales</NavLink>
+                        <NavLink href="/hq/returns">Synced returns</NavLink>
+                        <NavLink href="/hq/stock">Stock on hand</NavLink>
+                        <NavLink href="/hq/sessions">Branch cash-ups</NavLink>
+                        <NavLink href="/hq/sync-status">Sync status</NavLink>
+                    }
                     <NavLink href="/reports/vat">VAT report</NavLink>
                     <NavLink href="/backups">Backups</NavLink>
                     <NavLink href="/settings">Settings</NavLink>

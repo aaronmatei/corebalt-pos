@@ -1,9 +1,10 @@
 @page "/login"
 @layout EmptyLayout
+@inject Pos.Application.Abstractions.ICurrentTenant Tenant
 
 <div class="login-card">
-    <h1>Corebalt POS</h1>
-    <p>Back office sign in</p>
+    <h1>@(string.IsNullOrWhiteSpace(Tenant.DisplayName) ? "Corebalt POS" : Tenant.DisplayName)</h1>
+    <p>@(string.IsNullOrWhiteSpace(Tenant.DisplayName) ? "Back office sign in" : "Back office sign in · powered by Corebalt POS")</p>
     <form method="post" action="/backoffice/login">
         <Csrf />
         <label>Username</label>

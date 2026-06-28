@@ -1,0 +1,36 @@
+@page "/hq/stock"
+@attribute [Authorize(Policy = "BackOfficeManager")]
+@inject Pos.Application.Sync.IHqStockReadStore Stock
+@inject Pos.Application.Abstractions.ICurrentContext Ctx
+
+<h1>Stock on hand</h1>
+<p style="color:var(--muted)">On-hand per product per branch — the running sum of movement deltas synced up.</p>
+
+@if (_rows is not null)
+{
+    <table>
+        <thead><tr>
+            <th>SKU</th><th>Product</th><th>Unit</th>
+            <th style="text-align:right">On hand</th><th>Last movement (UTC)</th>
+        </tr></thead>
+        <tbody>
+            @foreach (var s in _rows)
+            {
+                <tr>
+                    <td>@(string.IsNullOrEmpty(s.Sku) ? "—" : s.Sku)</td>
+                    <td>@(string.IsNullOrEmpty(s.Name) ? s.ProductId.ToString() : s.Name)</td>
+                    <td>@s.UnitOfMeasure</td>
+                    <td style="text-align:right; @(s.OnHand <= 0 ? "color:var(--danger,#c0392b)" : "")">@Qty(s.OnHand)</td>
+                    <td>@s.LastMovementAtUtc.ToString("yyyy-MM-dd HH:mm")</td>
+                </tr>
+            }
+            @if (_rows.Count == 0) { <tr><td colspan="5" style="color:var(--muted)">No stock has synced yet.</td></tr> }
+        </tbody>
+    </table>
+}
+
+@code {
+    private IReadOnlyList<Pos.Application.Sync.HqStockRow>? _rows;
+    protected override async Task OnInitializedAsync() => _rows = await Stock.AllAsync(Ctx.TenantId, 500);
+    private static string Qty(decimal d) => d.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+}

@@ -22,6 +22,16 @@
 
   "Receipt": { "NumberPrefix": "MB" },
 
+  "HqSync": {
+    "_comment": "Push this store's sales to the Corebalt cloud (HQ). Off unless this store is cloud-connected. Get TenantSlug + SyncToken from tenant onboarding (see deploy/CLOUD.md). Don't also enable CorebaltErp — both drain the same outbox.",
+    "Enabled": false,
+    "CloudBaseUrl": "https://pos.corebalt.co.ke",
+    "TenantSlug": "",
+    "SyncToken": "",
+    "IntervalSeconds": 15,
+    "BatchSize": 200
+  },
+
   "Ops": {
     "_comment": "Per-install ops. Paths default to folders under the install directory if omitted.",
     "AutoMigrate": true,

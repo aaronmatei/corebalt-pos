@@ -1,0 +1,34 @@
+{
+  "_README": "HQ/cloud config reference. With docker-compose the equivalent values are supplied as Deployment__/Admin__/Jwt__/Ops__ environment variables (which OVERRIDE this file). For a bare systemd + dotnet deploy, copy to appsettings.Production.json next to Pos.Api.dll and fill it in. NEVER commit the filled file.",
+
+  "ConnectionStrings": {
+    "Pos": "Host=localhost;Port=5432;Database=pos;Username=pos;Password=__SET_ME__"
+  },
+
+  "Urls": "http://0.0.0.0:8080",
+
+  "Deployment": {
+    "_comment": "Hq = cloud multi-tenant; the tenant is resolved from the request subdomain under TenantBaseDomain.",
+    "Mode": "Hq",
+    "TenantBaseDomain": "pos.corebalt.co.ke"
+  },
+
+  "Admin": {
+    "_comment": "Platform-admin token for POST /admin/tenants (X-Admin-Token header). Generate >= 32 random chars.",
+    "ApiToken": "__SET_ME__"
+  },
+
+  "Jwt": {
+    "_comment": "HMAC signing key for tenant tokens (>= 32 chars).",
+    "Key": "__SET_ME__"
+  },
+
+  "Ops": {
+    "_comment": "DataProtectionKeysPath MUST persist — it decrypts every tenant's M-Pesa/eTIMS secrets.",
+    "AutoMigrate": true,
+    "PgDumpPath": "pg_dump",
+    "DataProtectionKeysPath": "/keys",
+    "BackupDirectory": "/backups",
+    "LogDirectory": "/logs"
+  }
+}

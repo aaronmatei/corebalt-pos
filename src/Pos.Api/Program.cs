@@ -171,12 +171,28 @@ builder.Services.AddScoped<FiscalSyncService>();
 if (!builder.Environment.IsEnvironment("Testing"))
     builder.Services.AddHostedService<EtimsSyncWorker>(); // per-tenant enable checked inside; tests drive it directly
 
+// Corebalt ERP: forward completed sales to HQ (outbox → POST /webhooks/pos/{slug}/sale). Off by default.
+// The sink + forwarder are registered in AddInfrastructure; only the worker is gated on Enabled here.
+var corebaltErp = builder.Configuration.GetSection("CorebaltErp").Get<Pos.Application.Integration.CorebaltErpOptions>()
+    ?? new Pos.Application.Integration.CorebaltErpOptions();
+builder.Services.AddSingleton(corebaltErp);
+if (corebaltErp.Enabled && !builder.Environment.IsEnvironment("Testing"))
+    builder.Services.AddHostedService<Pos.Api.CorebaltSyncWorker>();
+
 // Low-stock notification dispatcher (outbox → channels). Tests drive INotificationDispatcher directly.
 if (!builder.Environment.IsEnvironment("Testing"))
     builder.Services.AddHostedService<LowStockNotificationWorker>();
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentContext, ClaimsCurrentContext>();
+
+// Ambient tenant + EF query-filter source. One scoped instance behind BOTH ICurrentTenant (the pre-auth
+// tenant: subdomain in Hq, configured store in on-prem) and ITenantProvider (the query-filter net), so
+// the subdomain middleware's resolution is visible to login and to every DbContext in the scope.
+// Overrides the NullTenantProvider default registered by AddInfrastructure (last registration wins).
+builder.Services.AddScoped<RequestTenantContext>();
+builder.Services.AddScoped<ICurrentTenant>(sp => sp.GetRequiredService<RequestTenantContext>());
+builder.Services.AddScoped<ITenantProvider>(sp => sp.GetRequiredService<RequestTenantContext>());
 
 // ── Lightweight custom identity: JWT issuing + bearer validation + role policies (NOT ASP.NET Core
 // Identity). The signing key is a local store-server secret from config (works on the LAN, offline).
@@ -190,7 +206,21 @@ var jwt = new JwtOptions
 builder.Services.AddSingleton(jwt);
 builder.Services.AddSingleton<ITokenIssuer, JwtTokenIssuer>();
 
-// The single tenant/store this store-server serves (login scope + bootstrap target).
+// Deployment mode: StoreServer (on-prem, per-branch — the default) vs Hq (cloud SaaS, tenant resolved
+// from the request subdomain). Same binary, selected by the Deployment config section.
+var deployment = builder.Configuration.GetSection("Deployment").Get<DeploymentOptions>() ?? new DeploymentOptions();
+builder.Services.AddSingleton(deployment);
+
+// Store→cloud sync (M1). On-prem (StoreServer mode) pushes the outbox to the HQ tier when HqSync:Enabled.
+// The cloud (Hq mode) ingests via /hq/sync/ingest instead; tests drive HqSyncPusher.RunOnceAsync directly.
+var hqSync = builder.Configuration.GetSection("HqSync").Get<Pos.Application.Sync.HqSyncOptions>()
+    ?? new Pos.Application.Sync.HqSyncOptions();
+builder.Services.AddSingleton(hqSync);
+if (deployment.Mode == DeploymentMode.StoreServer && hqSync.Enabled && !builder.Environment.IsEnvironment("Testing"))
+    builder.Services.AddHostedService<Pos.Api.HqSyncPushWorker>();
+
+// The single tenant/store this store-server serves (login scope + bootstrap target). In Hq mode this is
+// unset (Guid.Empty) — the tenant is resolved per-request from the subdomain instead.
 var storeServer = new StoreServerOptions
 {
     TenantId = Guid.TryParse(builder.Configuration["StoreServer:TenantId"], out var ssTenant) ? ssTenant : Guid.Empty,
@@ -199,6 +229,7 @@ var storeServer = new StoreServerOptions
 builder.Services.AddSingleton(storeServer);
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<FingerprintService>();
+builder.Services.AddScoped<Pos.Application.Tenancy.TenantProvisioningService>(); // Hq tenant onboarding
 
 // Fingerprint auth is OPTIONAL; bind its config (the reader SDK is selected once hardware is chosen).
 builder.Services.AddSingleton(builder.Configuration.GetSection("Fingerprint").Get<Pos.Infrastructure.Identity.FingerprintOptions>()
@@ -301,11 +332,16 @@ app.UseExceptionHandler();
 app.MapOpenApi();
 app.UseStaticFiles(); // back-office css + favicon from wwwroot
 
+// Hq (cloud) mode: resolve the request subdomain → tenant before anything else looks at tenant data.
+// A no-op in StoreServer mode.
+app.UseMiddleware<TenantResolutionMiddleware>();
+
 // Route a fresh, un-provisioned install to the setup wizard (and away from it once complete).
 app.UseMiddleware<SetupRedirectMiddleware>();
 
 app.UseAuthentication();
 app.UseMiddleware<DevHeaderAuthMiddleware>(); // dev/test bypass: synthesize a principal from headers
+app.UseMiddleware<TenantGuardMiddleware>();   // Hq: principal's tenant must match the subdomain
 app.UseAuthorization();
 app.UseAntiforgery(); // protects the back-office form posts
 
@@ -328,6 +364,13 @@ v1.MapSync();
 
 app.MapAuth();   // /api/v1/auth/* (login + pin-login anonymous; change-password authorized)
 app.MapUsers();  // /api/v1/users (Manager only)
+
+// HQ/cloud platform-admin surface (tenant onboarding), token-guarded. Apex only, Hq mode only.
+if (deployment.IsHq)
+{
+    app.MapAdmin();
+    app.MapHqSync(); // store→cloud sync ingest (POST /hq/sync/ingest, sync-token auth)
+}
 
 // Blazor back-office: Razor Component pages + the form-post endpoints behind them.
 app.MapRazorComponents<App>();

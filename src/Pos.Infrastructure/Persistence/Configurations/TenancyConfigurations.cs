@@ -4,6 +4,25 @@ using Pos.Domain.Tenancy;
 
 namespace Pos.Infrastructure.Persistence.Configurations;
 
+internal sealed class TenantConfiguration : IEntityTypeConfiguration<Tenant>
+{
+    public void Configure(EntityTypeBuilder<Tenant> b)
+    {
+        b.ToTable("tenants");
+        b.HasKey(t => t.Id);
+        b.Property(t => t.Id).HasColumnName("id").ValueGeneratedNever(); // UUIDv7, edge-generated
+        b.Property(t => t.Slug).HasColumnName("slug").HasMaxLength(63).IsRequired();
+        b.Property(t => t.DisplayName).HasColumnName("display_name").HasMaxLength(200).IsRequired();
+        b.Property(t => t.PrimaryStoreId).HasColumnName("primary_store_id").IsRequired();
+        b.Property(t => t.IsActive).HasColumnName("is_active");
+        b.Property(t => t.SyncSecretHash).HasColumnName("sync_secret_hash").HasMaxLength(64);
+        b.Property(t => t.CreatedAtUtc).HasColumnName("created_at_utc").HasColumnType("timestamptz");
+        // Subdomain → tenant is a lookup on every Hq request; the slug is the natural key (one per cloud).
+        b.HasIndex(t => t.Slug).IsUnique().HasDatabaseName("ux_tenants_slug");
+        b.Ignore(t => t.DomainEvents);
+    }
+}
+
 internal sealed class MerchantProfileConfiguration : IEntityTypeConfiguration<MerchantProfile>
 {
     public void Configure(EntityTypeBuilder<MerchantProfile> b)

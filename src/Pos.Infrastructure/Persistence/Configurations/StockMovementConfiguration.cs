@@ -24,5 +24,7 @@ internal sealed class StockMovementConfiguration : IEntityTypeConfiguration<Stoc
         // Drives the stock-on-hand SUM query (the only allowed way to ask "how much do we have").
         b.HasIndex(m => new { m.TenantId, m.StoreId, m.ProductId })
             .HasDatabaseName("ix_stock_movements_tenant_store_product");
+
+        b.Ignore(m => m.DomainEvents); // raised → drained to the outbox by the interceptor, never persisted here
     }
 }

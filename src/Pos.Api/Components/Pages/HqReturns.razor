@@ -1,0 +1,38 @@
+@page "/hq/returns"
+@attribute [Authorize(Policy = "BackOfficeManager")]
+@inject Pos.Application.Sync.IHqCreditNotesReadStore Returns
+@inject Pos.Application.Abstractions.ICurrentContext Ctx
+
+<h1>Synced returns</h1>
+<p style="color:var(--muted)">Credit notes (returns / voids / refunds) synced up from this tenant's branches.</p>
+
+@if (_rows is not null)
+{
+    <table>
+        <thead><tr>
+            <th>Issued (UTC)</th><th>Credit note</th><th>Orig. receipt</th><th>Reason</th>
+            <th>By</th><th>Refund</th><th style="text-align:right">Total</th>
+        </tr></thead>
+        <tbody>
+            @foreach (var c in _rows)
+            {
+                <tr>
+                    <td>@c.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm")</td>
+                    <td>@(c.ReturnNumber ?? "—")@(c.IsVoid ? " (void)" : "")</td>
+                    <td>@c.OriginalReceiptNumber</td>
+                    <td>@c.Reason</td>
+                    <td>@c.AuthorizedByName</td>
+                    <td>@c.RefundMethod · @c.RefundStatus</td>
+                    <td style="text-align:right">@c.Currency @Money(c.GrandTotal)</td>
+                </tr>
+            }
+            @if (_rows.Count == 0) { <tr><td colspan="7" style="color:var(--muted)">No returns have synced yet.</td></tr> }
+        </tbody>
+    </table>
+}
+
+@code {
+    private IReadOnlyList<Pos.Application.Sync.HqCreditNoteRow>? _rows;
+    protected override async Task OnInitializedAsync() => _rows = await Returns.RecentAsync(Ctx.TenantId, 200);
+    private static string Money(decimal d) => d.ToString("#,##0.00", System.Globalization.CultureInfo.InvariantCulture);
+}

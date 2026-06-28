@@ -5,6 +5,27 @@ using Pos.Domain.Tenancy;
 
 namespace Pos.Infrastructure.Persistence.Repositories;
 
+internal sealed class TenantRepository : ITenantRepository
+{
+    private readonly PosDbContext _db;
+    public TenantRepository(PosDbContext db) => _db = db;
+
+    public Task<Tenant?> GetBySlugAsync(string slug, CancellationToken ct = default) =>
+        _db.Tenants.FirstOrDefaultAsync(t => t.Slug == slug, ct);
+
+    public Task<Tenant?> GetByIdAsync(Guid tenantId, CancellationToken ct = default) =>
+        _db.Tenants.FirstOrDefaultAsync(t => t.Id == tenantId, ct);
+
+    public Task<bool> SlugExistsAsync(string slug, CancellationToken ct = default) =>
+        _db.Tenants.AnyAsync(t => t.Slug == slug, ct);
+
+    public async Task<IReadOnlyList<Tenant>> ListAsync(CancellationToken ct = default) =>
+        await _db.Tenants.OrderBy(t => t.Slug).ToListAsync(ct);
+
+    public async Task AddAsync(Tenant tenant, CancellationToken ct = default) =>
+        await _db.Tenants.AddAsync(tenant, ct);
+}
+
 internal sealed class OpsSettingsRepository : IOpsSettingsRepository
 {
     private readonly PosDbContext _db;

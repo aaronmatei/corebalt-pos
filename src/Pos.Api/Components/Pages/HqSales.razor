@@ -1,0 +1,49 @@
+@page "/hq/sales"
+@attribute [Authorize(Policy = "BackOfficeManager")]
+@inject Pos.Application.Sync.IHqSalesReadStore Sales
+@inject Pos.Application.Abstractions.ICurrentContext Ctx
+
+<h1>Synced sales</h1>
+<p style="color:var(--muted)">Completed sales pushed up from this tenant's branches.</p>
+
+@if (_view is not null)
+{
+    <div class="card" style="margin-bottom:12px">
+        <p>Sales: <strong>@_view.Count</strong> · Branches: <strong>@_view.StoreCount</strong>
+           · Total: <strong>@Money(_view.Total)</strong></p>
+    </div>
+
+    <table>
+        <thead><tr>
+            <th>Completed (UTC)</th><th>Receipt</th><th>Till</th><th>Cashier</th>
+            <th style="text-align:right">Items</th><th style="text-align:right">VAT</th><th style="text-align:right">Total</th>
+        </tr></thead>
+        <tbody>
+            @foreach (var s in _view.Sales)
+            {
+                <tr>
+                    <td>@s.CompletedAtUtc.ToString("yyyy-MM-dd HH:mm")</td>
+                    <td>@(s.ReceiptNumber ?? "—")</td>
+                    <td>@s.RegisterName</td>
+                    <td>@s.CashierName</td>
+                    <td style="text-align:right">@s.LineCount</td>
+                    <td style="text-align:right">@s.Currency @Money(s.TotalVat)</td>
+                    <td style="text-align:right">@s.Currency @Money(s.GrandTotal)</td>
+                </tr>
+            }
+            @if (_view.Sales.Count == 0)
+            {
+                <tr><td colspan="7" style="color:var(--muted)">No sales have synced yet.</td></tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private Pos.Application.Sync.HqSalesView? _view;
+
+    protected override async Task OnInitializedAsync() =>
+        _view = await Sales.RecentAsync(Ctx.TenantId, take: 200);
+
+    private static string Money(decimal d) => d.ToString("#,##0.00", System.Globalization.CultureInfo.InvariantCulture);
+}

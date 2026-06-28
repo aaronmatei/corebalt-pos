@@ -2,6 +2,17 @@ using Pos.Domain.Tenancy;
 
 namespace Pos.Application.Tenancy;
 
+/// <summary>The HQ/cloud subdomain → tenant registry (Hq mode only). Looked up on every request, so
+/// the impl should be cheap; the slug is the unique key.</summary>
+public interface ITenantRepository
+{
+    Task<Tenant?> GetBySlugAsync(string slug, CancellationToken ct = default);
+    Task<Tenant?> GetByIdAsync(Guid tenantId, CancellationToken ct = default);
+    Task<bool> SlugExistsAsync(string slug, CancellationToken ct = default);
+    Task<IReadOnlyList<Tenant>> ListAsync(CancellationToken ct = default);
+    Task AddAsync(Tenant tenant, CancellationToken ct = default);
+}
+
 public interface IMerchantProfileRepository
 {
     Task<MerchantProfile?> GetAsync(Guid tenantId, CancellationToken ct = default);

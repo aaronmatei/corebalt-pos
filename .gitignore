@@ -10,6 +10,10 @@ obj/
 appsettings.Production.json
 appsettings.*.Local.json
 
+# Cloud deploy secrets (Cloudflare token, DB password, JWT/admin keys) — only .env.example is committed.
+.env
+deploy/cloud/.env
+
 # Publish output + runtime per-install folders.
 dist/
 logs/

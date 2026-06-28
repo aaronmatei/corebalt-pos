@@ -18,6 +18,9 @@ internal sealed class MpesaPaymentRepository : IMpesaPaymentRepository
             .OrderByDescending(p => p.InitiatedAtUtc)
             .FirstOrDefaultAsync(ct);
 
+    // The Daraja callback is anonymous and carries no tenant — this lookup is cross-tenant by design, so
+    // it opts out of the tenant query filter (the CheckoutRequestId is globally unique; reconciliation
+    // then re-checks tenant/store/amount).
     public Task<MpesaPayment?> FindByCheckoutRequestIdAsync(string checkoutRequestId, CancellationToken ct = default) =>
-        _db.MpesaPayments.FirstOrDefaultAsync(p => p.CheckoutRequestId == checkoutRequestId, ct);
+        _db.MpesaPayments.IgnoreQueryFilters().FirstOrDefaultAsync(p => p.CheckoutRequestId == checkoutRequestId, ct);
 }

@@ -1,5 +1,6 @@
 using Pos.SharedKernel;
 using Pos.SharedKernel.Ids;
+using Pos.Domain.Inventory.Events;
 
 namespace Pos.Domain.Inventory;
 
@@ -7,9 +8,10 @@ namespace Pos.Domain.Inventory;
 /// INVARIANT #3, applied to inventory: an immutable, append-only stock fact.
 /// Stock-on-hand for a product at a store is the SUM of its movements — never a mutable
 /// "quantity" column. This is precisely what lets many branches (and offline tills)
-/// reconcile to HQ without last-write-wins corrupting counts.
+/// reconcile to HQ without last-write-wins corrupting counts. Recording a movement RAISES a
+/// <see cref="StockMovementRecorded"/> domain event (outbox → HQ sync sums deltas into on-hand).
 /// </summary>
-public sealed class StockMovement : Entity, ITenantScoped, IStoreScoped
+public sealed class StockMovement : AggregateRoot, ITenantScoped, IStoreScoped
 {
     public Guid TenantId { get; private set; }
     public Guid StoreId { get; private set; }
@@ -26,7 +28,7 @@ public sealed class StockMovement : Entity, ITenantScoped, IStoreScoped
         decimal quantityDelta, StockMovementReason reason, Guid? sourceRef = null, string? reference = null)
     {
         if (quantityDelta == 0) throw new ArgumentException("Movement delta cannot be zero.", nameof(quantityDelta));
-        return new StockMovement
+        var movement = new StockMovement
         {
             Id = Uuid7.NewGuid(),
             TenantId = tenantId,
@@ -38,5 +40,7 @@ public sealed class StockMovement : Entity, ITenantScoped, IStoreScoped
             Reference = string.IsNullOrWhiteSpace(reference) ? null : reference.Trim(),
             OccurredAtUtc = DateTimeOffset.UtcNow
         };
+        movement.Raise(new StockMovementRecorded(movement.Id, tenantId, storeId, productId, quantityDelta, reason));
+        return movement;
     }
 }

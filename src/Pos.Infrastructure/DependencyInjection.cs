@@ -6,6 +6,7 @@ using Pos.Application.Cash;
 using Pos.Application.Catalog;
 using Pos.Application.Fiscalization;
 using Pos.Application.Identity;
+using Pos.Application.Integration;
 using Pos.Application.Inventory;
 using Pos.Application.Licensing;
 using Pos.Application.Payments;
@@ -13,6 +14,7 @@ using Pos.Application.Printing;
 using Pos.Application.Sales;
 using Pos.Application.Tenancy;
 using Pos.Infrastructure.Identity;
+using Pos.Infrastructure.Integration;
 using Pos.Application.Notifications;
 using Pos.Infrastructure.Mpesa;
 using Pos.Infrastructure.Notifications;
@@ -44,6 +46,11 @@ public static class DependencyInjection
             opts.AddInterceptors(sp.GetRequiredService<DomainEventsToOutboxInterceptor>());
         });
 
+        // Tenant scoping for the EF global query-filter safety net. Default = never filter (samples /
+        // design-time / migrations); the API host overrides this with a request-scoped provider that
+        // yields the authenticated principal's / subdomain's / configured tenant (last registration wins).
+        services.AddScoped<ITenantProvider, NullTenantProvider>();
+
         services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<PosDbContext>());
         services.AddScoped<ISaleRepository, SaleRepository>();
         services.AddScoped<ICreditNoteRepository, CreditNoteRepository>();
@@ -60,6 +67,29 @@ public static class DependencyInjection
         services.AddScoped<IReceiptNumberSequence, ReceiptNumberSequence>();
         services.AddScoped<IOutboxDispatcher, OutboxDispatcher>();
         services.AddScoped<Pos.Application.Sync.IOutboxSyncStore, Pos.Infrastructure.Sync.OutboxSyncStore>();
+        // HQ/cloud (Hq mode): durably ingest + project pushed store changes into the sync_inbox + hq_sales.
+        services.AddScoped<Pos.Application.Sync.IHqSyncIngestService, Pos.Infrastructure.Sync.HqSyncIngestService>();
+        // On-prem (StoreServer mode) store→cloud push. Default (disabled) options so the client can
+        // construct; the API host rebinds HqSyncOptions from config (last registration wins).
+        services.AddSingleton(new Pos.Application.Sync.HqSyncOptions());
+        // Default (empty) StoreServer identity so design-time/console hosts can construct services that
+        // depend on it (e.g. HqSyncPusher); the API host rebinds it from config (last registration wins).
+        services.AddSingleton(new Pos.Application.Identity.StoreServerOptions());
+        services.AddSingleton<Pos.Application.Sync.IHqSyncClient, Pos.Infrastructure.Sync.HqSyncHttpClient>();
+        services.AddScoped<Pos.Application.Sync.HqSyncPusher>();
+        services.AddScoped<Pos.Infrastructure.Sync.HqSalesReadStore>();
+        services.AddScoped<Pos.Application.Sync.IHqSalesReadStore>(sp => sp.GetRequiredService<Pos.Infrastructure.Sync.HqSalesReadStore>());
+        services.AddScoped<Pos.Application.Sync.IHqSessionsReadStore>(sp => sp.GetRequiredService<Pos.Infrastructure.Sync.HqSalesReadStore>());
+        services.AddScoped<Pos.Application.Sync.IHqCreditNotesReadStore>(sp => sp.GetRequiredService<Pos.Infrastructure.Sync.HqSalesReadStore>());
+        services.AddScoped<Pos.Application.Sync.IHqStockReadStore>(sp => sp.GetRequiredService<Pos.Infrastructure.Sync.HqSalesReadStore>());
+        services.AddScoped<Pos.Application.Sync.IHqSyncStatusReadStore>(sp => sp.GetRequiredService<Pos.Infrastructure.Sync.HqSalesReadStore>());
+
+        // Corebalt ERP sale forwarding (outbox → ERP). Worker is registered in Program only when enabled.
+        // Default (disabled) options so design-time/console hosts can construct the sink; the API host
+        // re-registers a config-bound instance after AddInfrastructure (last registration wins).
+        services.AddSingleton(new CorebaltErpOptions());
+        services.AddSingleton<IErpSaleSink, CorebaltErpSink>();
+        services.AddScoped<IErpSaleForwarder, ErpSaleForwarder>();
 
         // Notifications: the in-app channel is always on; Email/SMS are stubs (disabled until configured).
         // The dispatcher reads ProductLowStock outbox rows and fans them out to every enabled channel.
@@ -101,6 +131,7 @@ public static class DependencyInjection
         // Licensing: the app only ever VERIFIES (embedded public key). Entitlements derive from the key.
         services.AddSingleton<ILicenseVerifier, LicenseVerifier>();
 
+        services.AddScoped<ITenantRepository, TenantRepository>();
         services.AddScoped<IMerchantProfileRepository, MerchantProfileRepository>();
         services.AddScoped<IMpesaSettingsRepository, MpesaSettingsRepository>();
         services.AddScoped<IEtimsSettingsRepository, EtimsSettingsRepository>();
