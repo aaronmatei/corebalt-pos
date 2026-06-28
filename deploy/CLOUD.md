@@ -156,6 +156,32 @@ curl -sS -X POST https://pos.corebalt.co.ke/admin/tenants/acme/rotate-sync-token
 > Do NOT also enable the optional `CorebaltErp` sale forwarder on the same store — both consume the same
 > outbox `processed_at_utc` marker and would each miss what the other drains.
 
+## 5b. Backups (do this before real customers)
+
+The cloud state is two volumes: `cloud_pgdata` (the DB) and **`cloud_dpkeys`** (the Data-Protection key
+ring that decrypts every tenant's M-Pesa/eTIMS secrets — losing it is unrecoverable). `deploy/cloud/backup.sh`
+dumps both, verifies, prunes by retention, and (recommended) pushes off-VPS via rclone.
+
+```bash
+# one-time: install rclone + configure an offsite remote (Cloudflare R2 is a natural fit)
+curl https://rclone.org/install.sh | sudo bash
+rclone config                      # create a remote, e.g. name it "r2" → S3-compatible → R2 keys/endpoint
+chmod +x ~/corebalt-pos/deploy/cloud/backup.sh ~/corebalt-pos/deploy/cloud/restore.sh
+
+# test a run now
+POS_BACKUP_RCLONE_REMOTE="r2:corebalt-pos-backups" ~/corebalt-pos/deploy/cloud/backup.sh
+
+# schedule nightly at 02:30 (crontab -e)
+30 2 * * * POS_BACKUP_RCLONE_REMOTE="r2:corebalt-pos-backups" /root/corebalt-pos/deploy/cloud/backup.sh >> /var/log/pos-backup.log 2>&1
+```
+
+**Restore** (destructive — stops the API, restores DB + key ring, restarts):
+```bash
+~/corebalt-pos/deploy/cloud/restore.sh /root/pos-backups/pos-YYYYMMDD-HHMMSS.dump \
+                                        /root/pos-backups/dpkeys-YYYYMMDD-HHMMSS.tar.gz
+```
+> Test a restore at least once (e.g. on a scratch box) — an untested backup isn't a backup.
+
 ## 6. What's next (rest of Phase 2 / M1)
 
 Sales, returns, stock-on-hand and cash-up sessions all sync today. Remaining hardening: central
