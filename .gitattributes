@@ -1,0 +1,4 @@
+# Shell scripts must keep LF endings or they break on the Linux VPS (bad interpreter / ^M).
+*.sh text eol=lf
+# PowerShell scripts stay CRLF on Windows.
+*.ps1 text eol=crlf
