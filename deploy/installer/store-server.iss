@@ -39,6 +39,8 @@ Source: "..\..\dist\store-server\*"; DestDir: "{app}\app"; Flags: recursesubdirs
 ; Portable Postgres binaries - only on a FRESH install (on upgrade the running cluster locks them).
 Source: "pgsql\*"; DestDir: "{app}\pgsql"; Flags: recursesubdirs createallsubdirs ignoreversion; Check: IsFreshInstall
 Source: "scripts\provision-server.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversion
+; Post-install helper: wire this store to the cloud (HQ) tier (sets HqSync + restarts the service).
+Source: "scripts\connect-cloud.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversion
 #ifexist "redist\vc_redist.x64.exe"
 Source: "redist\vc_redist.x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall; Check: IsFreshInstall
 #endif
