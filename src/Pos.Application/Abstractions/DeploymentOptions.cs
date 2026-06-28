@@ -32,5 +32,13 @@ public sealed class DeploymentOptions
     /// </summary>
     public string TenantBaseDomain { get; set; } = "";
 
+    /// <summary>
+    /// Optional: when this POS shares a reverse-proxy's on-demand-TLS <c>ask</c> with another co-hosted
+    /// app (e.g. running behind the same Caddy), <c>/hq/tls-check</c> delegates hostnames that are NOT
+    /// under <see cref="TenantBaseDomain"/> to this URL (the co-hosted app's own host check), appending
+    /// <c>?domain={host}</c>. So one shared ask can authorize certs for both. Empty = refuse non-POS hosts.
+    /// </summary>
+    public string TlsCheckDelegateUrl { get; set; } = "";
+
     public bool IsHq => Mode == DeploymentMode.Hq;
 }

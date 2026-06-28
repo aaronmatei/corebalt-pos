@@ -138,6 +138,23 @@ public sealed class HqMultiTenantTests(PosApiFixture fx)
     }
 
     [Fact]
+    public async Task Tls_check_allows_active_tenant_hosts_and_refuses_others()
+    {
+        var f = HqFactory();
+        var slug = Slug("acme");
+        await ProvisionTenant(f, slug, "mgr", "Pass!234");
+        var c = ClientFor(f, Base); // the check reads ?domain=, not the Host header
+
+        async Task<HttpStatusCode> Check(string domain) =>
+            (await c.GetAsync($"/hq/tls-check?domain={domain}")).StatusCode;
+
+        (await Check($"{slug}.{Base}")).Should().Be(HttpStatusCode.OK);          // active tenant
+        (await Check(Base)).Should().Be(HttpStatusCode.OK);                       // apex
+        (await Check($"{Slug("ghost")}.{Base}")).Should().Be(HttpStatusCode.NotFound); // unknown tenant
+        (await Check("randomthing.example.com")).Should().Be(HttpStatusCode.NotFound); // non-POS, no delegate
+    }
+
+    [Fact]
     public async Task Admin_provisioning_requires_the_token_and_validates_the_slug()
     {
         var f = HqFactory();

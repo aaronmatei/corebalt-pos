@@ -184,6 +184,7 @@ if (!builder.Environment.IsEnvironment("Testing"))
     builder.Services.AddHostedService<LowStockNotificationWorker>();
 
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddHttpClient(); // IHttpClientFactory (used by the Hq on-demand-TLS ask delegate)
 builder.Services.AddScoped<ICurrentContext, ClaimsCurrentContext>();
 
 // Ambient tenant + EF query-filter source. One scoped instance behind BOTH ICurrentTenant (the pre-auth
@@ -369,7 +370,8 @@ app.MapUsers();  // /api/v1/users (Manager only)
 if (deployment.IsHq)
 {
     app.MapAdmin();
-    app.MapHqSync(); // store→cloud sync ingest (POST /hq/sync/ingest, sync-token auth)
+    app.MapHqSync();   // store→cloud sync ingest (POST /hq/sync/ingest, sync-token auth)
+    app.MapTlsCheck(); // on-demand-TLS `ask` for Caddy (GET /hq/tls-check?domain=)
 }
 
 // Blazor back-office: Razor Component pages + the form-post endpoints behind them.
