@@ -34,12 +34,12 @@ public sealed class CatalogItemService
         _items.GetByIdAsync(_ctx.TenantId, id, ct);
 
     public async Task<CatalogItem> CreateAsync(string sku, string name, Money price, TaxClass taxClass,
-        UnitOfMeasure unit, string? barcode, CancellationToken ct = default)
+        UnitOfMeasure unit, string? barcode, string? categoryName = null, CancellationToken ct = default)
     {
         sku = (sku ?? "").Trim();
         if (await _items.GetBySkuAsync(_ctx.TenantId, sku, ct) is not null)
             throw new InvalidOperationException($"SKU '{sku}' already exists in the catalogue.");
-        var item = CatalogItem.Create(_ctx.TenantId, sku, name, price, taxClass, unit, barcode, _clock.UtcNow);
+        var item = CatalogItem.Create(_ctx.TenantId, sku, name, price, taxClass, unit, barcode, categoryName, _clock.UtcNow);
         await _items.AddAsync(item, ct);
         await _changes.AddAsync(CatalogChange.From(item, _clock.UtcNow), ct);
         await _uow.SaveChangesAsync(ct);
@@ -47,11 +47,11 @@ public sealed class CatalogItemService
     }
 
     public async Task<CatalogItem?> UpdateAsync(Guid id, string name, string? barcode, UnitOfMeasure unit,
-        TaxClass taxClass, CancellationToken ct = default)
+        TaxClass taxClass, string? categoryName = null, CancellationToken ct = default)
     {
         var item = await _items.GetByIdAsync(_ctx.TenantId, id, ct);
         if (item is null) return null;
-        item.Update(name, barcode, unit, taxClass, _clock.UtcNow);
+        item.Update(name, barcode, unit, taxClass, categoryName, _clock.UtcNow);
         await _changes.AddAsync(CatalogChange.From(item, _clock.UtcNow), ct);
         await _uow.SaveChangesAsync(ct);
         return item;

@@ -24,14 +24,31 @@ internal sealed class TransferRepository : ITransferRepository
             .ToListAsync(ct);
 }
 
-internal sealed class ReceivedTransferRepository : IReceivedTransferRepository
+internal sealed class IncomingTransferRepository : IIncomingTransferRepository
 {
     private readonly PosDbContext _db;
-    public ReceivedTransferRepository(PosDbContext db) => _db = db;
+    public IncomingTransferRepository(PosDbContext db) => _db = db;
+
+    public Task<IncomingTransfer?> GetAsync(Guid tenantId, Guid storeId, Guid transferId, CancellationToken ct = default) =>
+        _db.IncomingTransfers.AsSplitQuery()
+            .FirstOrDefaultAsync(t => t.TenantId == tenantId && t.StoreId == storeId && t.Id == transferId, ct);
 
     public Task<bool> ExistsAsync(Guid tenantId, Guid storeId, Guid transferId, CancellationToken ct = default) =>
-        _db.ReceivedTransfers.AnyAsync(r => r.TenantId == tenantId && r.StoreId == storeId && r.TransferId == transferId, ct);
+        _db.IncomingTransfers.AnyAsync(t => t.TenantId == tenantId && t.StoreId == storeId && t.Id == transferId, ct);
 
-    public async Task AddAsync(ReceivedTransfer marker, CancellationToken ct = default) =>
-        await _db.ReceivedTransfers.AddAsync(marker, ct);
+    public async Task<IReadOnlyList<IncomingTransfer>> ListPendingAsync(Guid tenantId, Guid storeId, CancellationToken ct = default) =>
+        await _db.IncomingTransfers.AsSplitQuery()
+            .Where(t => t.TenantId == tenantId && t.StoreId == storeId && t.Status == IncomingTransferStatus.Pending)
+            .OrderBy(t => t.DispatchedAtUtc)
+            .ToListAsync(ct);
+
+    public async Task<IReadOnlyList<IncomingTransfer>> ListRecentAsync(Guid tenantId, Guid storeId, int take, CancellationToken ct = default) =>
+        await _db.IncomingTransfers.AsSplitQuery()
+            .Where(t => t.TenantId == tenantId && t.StoreId == storeId)
+            .OrderByDescending(t => t.DispatchedAtUtc)
+            .Take(Math.Clamp(take, 1, 200))
+            .ToListAsync(ct);
+
+    public async Task AddAsync(IncomingTransfer transfer, CancellationToken ct = default) =>
+        await _db.IncomingTransfers.AddAsync(transfer, ct);
 }

@@ -87,10 +87,11 @@ public static class DependencyInjection
         services.AddSingleton<Pos.Application.Sync.ICatalogPullClient, Pos.Infrastructure.Sync.HqCatalogPullHttpClient>();
         services.AddScoped<Pos.Application.Sync.HqCatalogPuller>();
         services.AddScoped<Pos.Infrastructure.Sync.HqSalesReadStore>();
-        // M3 destination receiver: dedup repo, HTTP pull/ack client, receiver.
-        services.AddScoped<IReceivedTransferRepository, Pos.Infrastructure.Persistence.Repositories.ReceivedTransferRepository>();
+        // M3 destination: incoming-transfer store, HTTP pull/ack client, pull-and-stage worker, receive-with-count service.
+        services.AddScoped<IIncomingTransferRepository, Pos.Infrastructure.Persistence.Repositories.IncomingTransferRepository>();
         services.AddSingleton<Pos.Application.Sync.IHqTransferPullClient, Pos.Infrastructure.Sync.HqTransferPullHttpClient>();
-        services.AddScoped<Pos.Application.Sync.HqTransferReceiver>();
+        services.AddScoped<Pos.Application.Sync.IncomingTransferPuller>();
+        services.AddScoped<Pos.Application.Inventory.TransferReceivingService>();
         services.AddScoped<Pos.Application.Sync.IHqSalesReadStore>(sp => sp.GetRequiredService<Pos.Infrastructure.Sync.HqSalesReadStore>());
         services.AddScoped<Pos.Application.Sync.IHqSessionsReadStore>(sp => sp.GetRequiredService<Pos.Infrastructure.Sync.HqSalesReadStore>());
         services.AddScoped<Pos.Application.Sync.IHqCreditNotesReadStore>(sp => sp.GetRequiredService<Pos.Infrastructure.Sync.HqSalesReadStore>());

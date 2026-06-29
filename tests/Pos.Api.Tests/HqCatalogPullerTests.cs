@@ -34,7 +34,8 @@ public sealed class HqCatalogPullerTests
         }, Cursor: 2, HasMore: false);
 
         var state = new FakeState();
-        var puller = new HqCatalogPuller(new FakeClient(page), state, products,
+        var categories = new FakeCategories();
+        var puller = new HqCatalogPuller(new FakeClient(page), state, products, categories,
             new StoreServerOptions { TenantId = tenant, StoreId = store },
             new HqSyncOptions { Enabled = true, TenantSlug = "acme", BatchSize = 100 },
             new FakeClock(), new FakeUow());
@@ -49,6 +50,31 @@ public sealed class HqCatalogPullerTests
         sugar.Price.Amount.Should().Be(150m);
         sugar.DomainEvents.Should().BeEmpty();
         state.Current!.LastSeq.Should().Be(2);               // cursor advanced
+    }
+
+    [Fact]
+    public async Task Pushed_category_name_materializes_a_local_category_and_tags_the_product()
+    {
+        var tenant = Uuid7.NewGuid();
+        var store = Uuid7.NewGuid();
+        var products = new FakeProducts(null);
+        var categories = new FakeCategories();
+
+        var page = new CatalogPullResponse(new[]
+        {
+            new CatalogItemDto(1, Uuid7.NewGuid(), "MILK",  "Milk 500ml", 65m, "KES", "StandardRated", "Each", null, true, "Dairy"),
+            new CatalogItemDto(2, Uuid7.NewGuid(), "YOGHRT", "Yoghurt",   90m, "KES", "StandardRated", "Each", null, true, "Dairy"),
+        }, Cursor: 2, HasMore: false);
+
+        var puller = new HqCatalogPuller(new FakeClient(page), new FakeState(), products, categories,
+            new StoreServerOptions { TenantId = tenant, StoreId = store },
+            new HqSyncOptions { Enabled = true, TenantSlug = "acme", BatchSize = 100 }, new FakeClock(), new FakeUow());
+
+        await puller.RunOnceAsync();
+
+        // The "Dairy" category is created ONCE and both products point at it.
+        var dairy = categories.Added.Should().ContainSingle(c => c.Name == "Dairy").Subject;
+        products.Added.Should().OnlyContain(p => p.CategoryId == dairy.Id);
     }
 
     // ── fakes ──
@@ -79,6 +105,18 @@ public sealed class HqCatalogPullerTests
             Task.FromResult<IReadOnlyDictionary<Guid, Guid?>>(new Dictionary<Guid, Guid?>());
         public Task<bool> SkuExistsAsync(Guid t, string sku, Guid? ex = null, CancellationToken ct = default) => Task.FromResult(false);
         public Task<bool> BarcodeExistsAsync(Guid t, string bc, Guid? ex = null, CancellationToken ct = default) => Task.FromResult(false);
+    }
+
+    private sealed class FakeCategories : ICategoryRepository
+    {
+        public List<Category> Added { get; } = new();
+        public Task<Category?> GetAsync(Guid t, Guid id, CancellationToken ct = default) =>
+            Task.FromResult(Added.FirstOrDefault(c => c.Id == id));
+        public Task<IReadOnlyList<Category>> ListAsync(Guid t, bool includeInactive = false, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<Category>>(Added.Where(c => c.TenantId == t).ToList());
+        public Task AddAsync(Category category, CancellationToken ct = default) { Added.Add(category); return Task.CompletedTask; }
+        public Task<bool> NameExistsAsync(Guid t, Guid? parentId, string name, Guid? excludingCategoryId = null, CancellationToken ct = default) =>
+            Task.FromResult(Added.Any(c => c.TenantId == t && string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase)));
     }
 
     private sealed class FakeClock : IClock { public DateTimeOffset UtcNow => DateTimeOffset.UtcNow; }

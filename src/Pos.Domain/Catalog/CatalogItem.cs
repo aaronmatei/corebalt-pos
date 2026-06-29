@@ -19,13 +19,17 @@ public sealed class CatalogItem : AggregateRoot, ITenantScoped
     public TaxClass TaxClass { get; private set; }
     public UnitOfMeasure UnitOfMeasure { get; private set; }
     public string? Barcode { get; private set; }
+    /// <summary>The chain-wide category name this item belongs to (null = uncategorized). A NAME, not an id,
+    /// so it's portable to every branch DB — branches materialize their own local <c>Category</c> by name
+    /// on pull (category ids are not shared across the cloud + on-prem databases).</summary>
+    public string? CategoryName { get; private set; }
     public bool IsActive { get; private set; } = true;
     public DateTimeOffset UpdatedAtUtc { get; private set; }
 
     private CatalogItem() { } // EF
 
     public static CatalogItem Create(Guid tenantId, string sku, string name, Money price,
-        TaxClass taxClass, UnitOfMeasure unitOfMeasure, string? barcode, DateTimeOffset now)
+        TaxClass taxClass, UnitOfMeasure unitOfMeasure, string? barcode, string? categoryName, DateTimeOffset now)
     {
         if (tenantId == Guid.Empty) throw new ArgumentException("TenantId is required.", nameof(tenantId));
         if (string.IsNullOrWhiteSpace(sku)) throw new ArgumentException("SKU is required.", nameof(sku));
@@ -40,18 +44,20 @@ public sealed class CatalogItem : AggregateRoot, ITenantScoped
             TaxClass = taxClass,
             UnitOfMeasure = unitOfMeasure,
             Barcode = string.IsNullOrWhiteSpace(barcode) ? null : barcode.Trim(),
+            CategoryName = string.IsNullOrWhiteSpace(categoryName) ? null : categoryName.Trim(),
             IsActive = true,
             UpdatedAtUtc = now,
         };
     }
 
-    public void Update(string name, string? barcode, UnitOfMeasure unitOfMeasure, TaxClass taxClass, DateTimeOffset now)
+    public void Update(string name, string? barcode, UnitOfMeasure unitOfMeasure, TaxClass taxClass, string? categoryName, DateTimeOffset now)
     {
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("Name is required.", nameof(name));
         Name = name.Trim();
         Barcode = string.IsNullOrWhiteSpace(barcode) ? null : barcode.Trim();
         UnitOfMeasure = unitOfMeasure;
         TaxClass = taxClass;
+        CategoryName = string.IsNullOrWhiteSpace(categoryName) ? null : categoryName.Trim();
         UpdatedAtUtc = now;
     }
 

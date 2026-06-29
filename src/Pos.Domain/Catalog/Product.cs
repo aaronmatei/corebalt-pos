@@ -104,11 +104,12 @@ public sealed class Product : AggregateRoot, ITenantScoped, IStoreScoped
     public void AssignCategory(Guid? categoryId) => CategoryId = categoryId;
 
     /// <summary>
-    /// Apply an authoritative HQ catalogue push (M2): overwrite name / barcode / unit / tax / price / active
-    /// from the central catalogue. Deliberately raises NO domain event — it mirrors an external decision
-    /// (not a local action), so it never churns the store outbox or loops back to HQ. Stock is untouched.
+    /// Apply an authoritative HQ catalogue push (M2): overwrite name / barcode / unit / tax / price / active /
+    /// category from the central catalogue. Deliberately raises NO domain event — it mirrors an external
+    /// decision (not a local action), so it never churns the store outbox or loops back to HQ. Stock is
+    /// untouched. <paramref name="categoryId"/> is the LOCAL category the puller resolved from the pushed name.
     /// </summary>
-    public void ApplyHqCatalog(string name, string? barcode, UnitOfMeasure unit, TaxClass taxClass, Money price, bool active)
+    public void ApplyHqCatalog(string name, string? barcode, UnitOfMeasure unit, TaxClass taxClass, Money price, bool active, Guid? categoryId = null)
     {
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("Name is required.", nameof(name));
         if (price.Amount < 0) throw new ArgumentOutOfRangeException(nameof(price), "Price cannot be negative.");
@@ -118,6 +119,7 @@ public sealed class Product : AggregateRoot, ITenantScoped, IStoreScoped
         TaxClass = taxClass;
         Price = price;
         IsActive = active;
+        CategoryId = categoryId;
     }
 
     /// <summary>

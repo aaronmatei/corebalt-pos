@@ -26,12 +26,12 @@ internal static class CatalogMasterEndpoints
         g.MapPost("/", async (CreateCatalogItemRequest req, CatalogItemService svc, CancellationToken ct) =>
         {
             var item = await svc.CreateAsync(req.Sku, req.Name, new Money(req.PriceAmount, req.PriceCurrency),
-                req.TaxClass, req.UnitOfMeasure, req.Barcode, ct);
+                req.TaxClass, req.UnitOfMeasure, req.Barcode, req.CategoryName, ct);
             return Results.Created($"/api/v1/catalog/{item.Id}", ToResponse(item));
         });
 
         g.MapPut("/{id:guid}", async (Guid id, UpdateCatalogItemRequest req, CatalogItemService svc, CancellationToken ct) =>
-            await svc.UpdateAsync(id, req.Name, req.Barcode, req.UnitOfMeasure, req.TaxClass, ct) is { } i
+            await svc.UpdateAsync(id, req.Name, req.Barcode, req.UnitOfMeasure, req.TaxClass, req.CategoryName, ct) is { } i
                 ? Results.Ok(ToResponse(i)) : Results.NotFound());
 
         g.MapPut("/{id:guid}/price", async (Guid id, RepriceProductRequest req, CatalogItemService svc, CancellationToken ct) =>
@@ -59,7 +59,7 @@ internal static class CatalogMasterEndpoints
             var take = max is > 0 ? Math.Min(max.Value, 500) : 200;
             var rows = await changes.ListSinceAsync(tenant.Id, since ?? 0, take, ct);
             var items = rows.Select(c => new CatalogItemDto(c.Seq, c.CatalogItemId, c.Sku, c.Name, c.PriceAmount,
-                c.Currency, c.TaxClass, c.UnitOfMeasure, c.Barcode, c.IsActive)).ToList();
+                c.Currency, c.TaxClass, c.UnitOfMeasure, c.Barcode, c.IsActive, c.CategoryName)).ToList();
             var cursor = items.Count > 0 ? items[^1].Seq : (since ?? 0);
             return Results.Ok(new CatalogPullResponse(items, cursor, items.Count == take));
         }).AllowAnonymous();
@@ -69,5 +69,5 @@ internal static class CatalogMasterEndpoints
 
     private static CatalogItemResponse ToResponse(CatalogItem i) => new(
         i.Id, i.Sku, i.Name, new MoneyDto(i.Price.Amount, i.Price.Currency), i.UnitOfMeasure, i.TaxClass,
-        i.Barcode, i.IsActive, i.UpdatedAtUtc);
+        i.Barcode, i.IsActive, i.UpdatedAtUtc, i.CategoryName);
 }

@@ -339,13 +339,27 @@ internal static class BackOfficeEndpoints
         // ── HQ Catalogue (M2): central catalogue, pushed down to branches ──
         g.MapPost("/catalog", async (CatalogItemService svc, ICurrentContext ctx, IMerchantProfileRepository merchants,
             [FromForm] string sku, [FromForm] string name, [FromForm] string? priceAmount,
-            [FromForm] string unit, [FromForm] string taxClass, [FromForm] string? barcode, CancellationToken ct) =>
+            [FromForm] string unit, [FromForm] string taxClass, [FromForm] string? barcode,
+            [FromForm] string? categoryName, CancellationToken ct) =>
         {
             try
             {
                 var currency = (await merchants.GetAsync(ctx.TenantId, ct))?.Currency ?? "KES";
                 await svc.CreateAsync(sku, name, new Money(RequiredDecimal(priceAmount, "Price"), currency),
-                    Parse<TaxClass>(taxClass), Parse<UnitOfMeasure>(unit), barcode, ct);
+                    Parse<TaxClass>(taxClass), Parse<UnitOfMeasure>(unit), barcode, categoryName, ct);
+                return Results.Redirect("/hq/catalog");
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return Back("/hq/catalog", ex); }
+        }).RequireAuthorization("BackOfficeManager");
+
+        // Full edit of a catalogue item (name / barcode / unit / tax / category) — pushed to branches like any change.
+        g.MapPost("/catalog/{id:guid}", async (Guid id, CatalogItemService svc,
+            [FromForm] string name, [FromForm] string? barcode, [FromForm] string unit,
+            [FromForm] string taxClass, [FromForm] string? categoryName, CancellationToken ct) =>
+        {
+            try
+            {
+                await svc.UpdateAsync(id, name, barcode, Parse<UnitOfMeasure>(unit), Parse<TaxClass>(taxClass), categoryName, ct);
                 return Results.Redirect("/hq/catalog");
             }
             catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return Back("/hq/catalog", ex); }
@@ -369,22 +383,56 @@ internal static class BackOfficeEndpoints
             return Results.Redirect("/hq/catalog");
         }).RequireAuthorization("BackOfficeManager");
 
-        // ── Inter-branch transfers (M3): dispatch from this branch ──
-        g.MapPost("/transfers", async (Pos.Application.Inventory.TransferService svc,
-            [FromForm] string destination, [FromForm] Guid productId, [FromForm] string? quantity,
-            [FromForm] string? note, CancellationToken ct) =>
+        // ── Inter-branch transfers (M3): dispatch a MULTI-LINE transfer from this branch ──
+        g.MapPost("/transfers", async (HttpContext http, Pos.Application.Inventory.TransferService svc, CancellationToken ct) =>
         {
+            var form = http.Request.Form;
+            var parts = form["destination"].ToString().Split('|', 2);
+            if (parts.Length < 1 || !Guid.TryParse(parts[0], out var toStoreId))
+                return Back("/transfers", new ArgumentException("Choose a destination branch."));
+            var toName = parts.Length > 1 ? parts[1] : "";
+
+            // One quantity input per product (name "qty_{productId}"); only positive ones become lines.
+            var lines = new List<Pos.Application.Inventory.TransferLineInput>();
+            foreach (var key in form.Keys.Where(k => k.StartsWith("qty_", StringComparison.Ordinal)))
+            {
+                if (!Guid.TryParse(key.AsSpan(4), out var productId)) continue;
+                if (decimal.TryParse(form[key], System.Globalization.NumberStyles.Any,
+                        System.Globalization.CultureInfo.InvariantCulture, out var qty) && qty > 0)
+                    lines.Add(new Pos.Application.Inventory.TransferLineInput(productId, qty));
+            }
+            if (lines.Count == 0) return Back("/transfers", new ArgumentException("Enter a quantity for at least one product."));
+
+            var note = form["note"].ToString();
             try
             {
-                var parts = (destination ?? "").Split('|', 2);
-                if (parts.Length < 1 || !Guid.TryParse(parts[0], out var toStoreId))
-                    return Back("/transfers", new ArgumentException("Choose a destination branch."));
-                var toName = parts.Length > 1 ? parts[1] : "";
-                await svc.DispatchAsync(toStoreId, toName,
-                    new[] { new Pos.Application.Inventory.TransferLineInput(productId, RequiredDecimal(quantity, "Quantity")) }, note, ct);
+                await svc.DispatchAsync(toStoreId, toName, lines, string.IsNullOrWhiteSpace(note) ? null : note, ct);
                 return Results.Redirect("/transfers");
             }
             catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return Back("/transfers", ex); }
+        }).RequireAuthorization("BackOfficeManager");
+
+        // M3 receive-with-count: confirm what physically arrived (one "recv_{lineId}" input per line; blank = expected).
+        g.MapPost("/transfers/receive", async (HttpContext http, Pos.Application.Inventory.TransferReceivingService svc, CancellationToken ct) =>
+        {
+            var form = http.Request.Form;
+            if (!Guid.TryParse(form["transferId"], out var transferId))
+                return Back("/incoming-transfers", new ArgumentException("Missing transfer."));
+
+            var counts = new List<Pos.Application.Inventory.ReceiveLineInput>();
+            foreach (var key in form.Keys.Where(k => k.StartsWith("recv_", StringComparison.Ordinal)))
+            {
+                if (!Guid.TryParse(key.AsSpan(5), out var lineId)) continue;
+                var raw = form[key].ToString();
+                if (string.IsNullOrWhiteSpace(raw)) continue; // untouched → service defaults it to the expected qty
+                if (!decimal.TryParse(raw, System.Globalization.NumberStyles.Any,
+                        System.Globalization.CultureInfo.InvariantCulture, out var qty) || qty < 0)
+                    return Back("/incoming-transfers", new ArgumentException("Counted quantity must be zero or more."));
+                counts.Add(new Pos.Application.Inventory.ReceiveLineInput(lineId, qty));
+            }
+
+            try { await svc.ReceiveAsync(transferId, counts, ct); return Results.Redirect("/incoming-transfers"); }
+            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return Back("/incoming-transfers", ex); }
         }).RequireAuthorization("BackOfficeManager");
 
         return app;

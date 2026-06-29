@@ -38,7 +38,43 @@ public sealed class M3TransferUnitTests
     }
 
     [Fact]
-    public async Task Receiver_applies_transfer_in_by_sku_once_and_acks()
+    public async Task Dispatch_blocks_sending_more_than_on_hand()
+    {
+        var tenant = Uuid7.NewGuid(); var store = Uuid7.NewGuid(); var toStore = Uuid7.NewGuid();
+        var product = Product.Create(tenant, store, "MILK", "Milk 500ml", new Money(60m, "KES"), UnitOfMeasure.Each, null, TaxClass.StandardRated);
+        var movements = new FakeMovements { OnHand = 3m };
+        var svc = new TransferService(new FakeCtx(tenant, store, Uuid7.NewGuid(), "Asha"), new FakeProducts(product), new FakeTransfers(), movements, new FakeUow());
+
+        var act = () => svc.DispatchAsync(toStore, "West", new[] { new TransferLineInput(product.Id, 5m) }, null);
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*on hand*");
+        movements.Recorded.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Puller_stages_incoming_as_pending_without_moving_stock()
+    {
+        var tenant = Uuid7.NewGuid(); var store = Uuid7.NewGuid(); var fromStore = Uuid7.NewGuid(); var transferId = Uuid7.NewGuid();
+        var snap = new TransferSnapshot(transferId, tenant, fromStore, store, "West", "Asha", DateTimeOffset.UtcNow, null,
+            new[] { new TransferLineSnapshot(Uuid7.NewGuid(), "MILK", "Milk 500ml", 12m) });
+        var client = new FakeTransferPull(new[] { snap });
+        var incoming = new FakeIncoming();
+        var puller = new IncomingTransferPuller(client, incoming,
+            new StoreServerOptions { TenantId = tenant, StoreId = store }, new HqSyncOptions { Enabled = true }, new FakeUow());
+
+        (await puller.RunOnceAsync()).Should().Be(1);
+        var staged = incoming.Store.Should().ContainSingle(t => t.Id == transferId).Subject;
+        staged.Status.Should().Be(IncomingTransferStatus.Pending);
+        staged.Lines.Should().ContainSingle(l => l.Sku == "MILK" && l.ExpectedQuantity == 12m && l.ReceivedQuantity == null);
+        client.Acked.Should().BeEmpty(); // pending → NOT acked yet (awaits the operator's count)
+
+        // Re-pull while still pending: no duplicate row, still not acked.
+        (await puller.RunOnceAsync()).Should().Be(0);
+        incoming.Store.Should().ContainSingle();
+        client.Acked.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Receive_posts_the_counted_quantity_records_the_discrepancy_and_acks()
     {
         var tenant = Uuid7.NewGuid(); var store = Uuid7.NewGuid(); var fromStore = Uuid7.NewGuid(); var transferId = Uuid7.NewGuid();
         // The local product for MILK has a DIFFERENT id than the source's — resolution is by SKU.
@@ -47,22 +83,33 @@ public sealed class M3TransferUnitTests
             new[] { new TransferLineSnapshot(Uuid7.NewGuid(), "MILK", "Milk 500ml", 12m) });
 
         var client = new FakeTransferPull(new[] { snap });
-        var received = new FakeReceived();
-        var movements = new FakeMovements();
-        var receiver = new HqTransferReceiver(client, received, new FakeProducts(localMilk), movements,
-            new StoreServerOptions { TenantId = tenant, StoreId = store }, new HqSyncOptions { Enabled = true }, new FakeClock(), new FakeUow());
+        var incoming = new FakeIncoming();
+        var server = new StoreServerOptions { TenantId = tenant, StoreId = store };
+        await new IncomingTransferPuller(client, incoming, server, new HqSyncOptions { Enabled = true }, new FakeUow()).RunOnceAsync();
+        var lineId = incoming.Store.Single().Lines.Single().Id;
 
-        (await receiver.RunOnceAsync()).Should().Be(1);
-        movements.Recorded.Should().ContainSingle(m => m.Reason == StockMovementReason.TransferIn && m.QuantityDelta == 12m && m.ProductId == localMilk.Id);
-        received.Added.Should().ContainSingle(r => r.TransferId == transferId);
+        var movements = new FakeMovements();
+        var svc = new TransferReceivingService(new FakeCtx(tenant, store, Uuid7.NewGuid(), "Bila"), incoming,
+            new FakeProducts(localMilk), movements, client, new FakeClock(), new FakeUow());
+
+        // Only 10 of the 12 sent actually arrived.
+        await svc.ReceiveAsync(transferId, new[] { new ReceiveLineInput(lineId, 10m) });
+
+        movements.Recorded.Should().ContainSingle(m => m.Reason == StockMovementReason.TransferIn && m.QuantityDelta == 10m && m.ProductId == localMilk.Id);
+        var t = incoming.Store.Single();
+        t.Status.Should().Be(IncomingTransferStatus.Received);
+        t.ReceivedByName.Should().Be("Bila");
+        t.HasDiscrepancy.Should().BeTrue();
+        t.Lines.Single().Discrepancy.Should().Be(-2m);
         client.Acked.Should().Contain(transferId);
 
-        // Idempotent: already received → no new movement, just re-ack.
-        received.AlreadyReceived = true;
-        movements.Recorded.Clear();
+        // Idempotent: re-receiving the same transfer is refused (no double-count).
+        var act = () => svc.ReceiveAsync(transferId, new[] { new ReceiveLineInput(lineId, 10m) });
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*already been received*");
+
+        // And a re-pull of an already-received transfer just re-acks (a lost ack), never re-stages.
         client.Acked.Clear();
-        (await receiver.RunOnceAsync()).Should().Be(0);
-        movements.Recorded.Should().BeEmpty();
+        (await new IncomingTransferPuller(client, incoming, server, new HqSyncOptions { Enabled = true }, new FakeUow()).RunOnceAsync()).Should().Be(0);
         client.Acked.Should().Contain(transferId);
     }
 
@@ -102,18 +149,25 @@ public sealed class M3TransferUnitTests
     private sealed class FakeMovements : IStockMovementRepository
     {
         public List<StockMovement> Recorded { get; } = new();
+        public decimal OnHand { get; set; } = 1000m;
         public Task AddAsync(StockMovement m, CancellationToken ct = default) { Recorded.Add(m); return Task.CompletedTask; }
         public Task AddRangeAsync(IEnumerable<StockMovement> ms, CancellationToken ct = default) { Recorded.AddRange(ms); return Task.CompletedTask; }
-        public Task<decimal> GetOnHandAsync(Guid t, Guid s, Guid p, CancellationToken ct = default) => Task.FromResult(0m);
+        public Task<decimal> GetOnHandAsync(Guid t, Guid s, Guid p, CancellationToken ct = default) => Task.FromResult(OnHand);
         public Task<IReadOnlyDictionary<Guid, decimal>> GetOnHandByProductAsync(Guid t, Guid s, CancellationToken ct = default) => Task.FromResult<IReadOnlyDictionary<Guid, decimal>>(new Dictionary<Guid, decimal>());
     }
 
-    private sealed class FakeReceived : IReceivedTransferRepository
+    private sealed class FakeIncoming : IIncomingTransferRepository
     {
-        public bool AlreadyReceived { get; set; }
-        public List<ReceivedTransfer> Added { get; } = new();
-        public Task<bool> ExistsAsync(Guid t, Guid s, Guid id, CancellationToken ct = default) => Task.FromResult(AlreadyReceived);
-        public Task AddAsync(ReceivedTransfer m, CancellationToken ct = default) { Added.Add(m); return Task.CompletedTask; }
+        public List<IncomingTransfer> Store { get; } = new();
+        public Task<IncomingTransfer?> GetAsync(Guid t, Guid s, Guid id, CancellationToken ct = default) =>
+            Task.FromResult(Store.FirstOrDefault(x => x.TenantId == t && x.StoreId == s && x.Id == id));
+        public Task<bool> ExistsAsync(Guid t, Guid s, Guid id, CancellationToken ct = default) =>
+            Task.FromResult(Store.Any(x => x.TenantId == t && x.StoreId == s && x.Id == id));
+        public Task<IReadOnlyList<IncomingTransfer>> ListPendingAsync(Guid t, Guid s, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<IncomingTransfer>>(Store.Where(x => x.TenantId == t && x.StoreId == s && x.Status == IncomingTransferStatus.Pending).ToList());
+        public Task<IReadOnlyList<IncomingTransfer>> ListRecentAsync(Guid t, Guid s, int take, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<IncomingTransfer>>(Store.Where(x => x.TenantId == t && x.StoreId == s).ToList());
+        public Task AddAsync(IncomingTransfer m, CancellationToken ct = default) { Store.Add(m); return Task.CompletedTask; }
     }
 
     private sealed class FakeTransferPull(IReadOnlyList<TransferSnapshot> incoming) : IHqTransferPullClient

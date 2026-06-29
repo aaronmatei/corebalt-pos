@@ -36,11 +36,18 @@ public sealed class TransferService
         var tenant = _ctx.TenantId;
         var from = _ctx.StoreId;
 
+        if (lines.Count == 0) throw new InvalidOperationException("A transfer needs at least one line.");
+
         var resolved = new List<(Guid, string, string, decimal)>(lines.Count);
         foreach (var l in lines)
         {
+            if (l.Quantity <= 0) throw new ArgumentException("Transfer quantity must be positive.");
             var p = await _products.GetAsync(tenant, from, l.ProductId, ct)
                 ?? throw new InvalidOperationException($"Product {l.ProductId} is not in this branch's catalogue.");
+            // Over-dispatch guard: never send more than is on hand (on-hand = SUM of movements).
+            var onHand = await _movements.GetOnHandAsync(tenant, from, p.Id, ct);
+            if (l.Quantity > onHand)
+                throw new InvalidOperationException($"Only {onHand:0.###} {p.Sku} on hand; cannot transfer {l.Quantity:0.###}.");
             resolved.Add((p.Id, p.Sku, p.Name, l.Quantity));
         }
 

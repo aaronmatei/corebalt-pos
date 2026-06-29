@@ -11,22 +11,33 @@
 
 @if (_branches is { Count: > 0 })
 {
-    <form method="post" action="/backoffice/transfers" class="card" style="margin-bottom:14px; display:flex; gap:8px; flex-wrap:wrap; align-items:end">
+    <form method="post" action="/backoffice/transfers" class="card" style="margin-bottom:14px">
         <Csrf />
-        <label>To branch<br />
-            <select name="destination" required>
-                <option value="">— choose —</option>
-                @foreach (var b in _branches) { <option value="@(b.StoreId)|@(b.Name)">@b.Name</option> }
-            </select>
-        </label>
-        <label>Product<br />
-            <select name="productId" required>
-                @foreach (var p in _products!) { <option value="@p.Id">@p.Sku — @p.Name</option> }
-            </select>
-        </label>
-        <label>Qty<br /><input name="quantity" type="number" step="0.001" min="0" required style="width:80px" /></label>
-        <label>Note<br /><input name="note" /></label>
-        <button type="submit">Dispatch</button>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:end; margin-bottom:10px">
+            <label>To branch<br />
+                <select name="destination" required>
+                    <option value="">— choose —</option>
+                    @foreach (var b in _branches) { <option value="@(b.StoreId)|@(b.Name)">@b.Name</option> }
+                </select>
+            </label>
+            <label style="flex:1; min-width:200px">Note<br /><input name="note" style="width:100%" /></label>
+        </div>
+        <p style="color:var(--muted); margin:4px 0">Enter a quantity for each product to send (leave blank to skip):</p>
+        <table>
+            <thead><tr><th>SKU</th><th>Product</th><th style="text-align:right">Qty to send</th></tr></thead>
+            <tbody>
+                @foreach (var p in _products!)
+                {
+                    <tr>
+                        <td>@p.Sku</td>
+                        <td>@p.Name</td>
+                        <td style="text-align:right"><input name="qty_@p.Id" type="number" step="0.001" min="0" style="width:90px" /></td>
+                    </tr>
+                }
+                @if (_products!.Count == 0) { <tr><td colspan="3" style="color:var(--muted)">No products to transfer.</td></tr> }
+            </tbody>
+        </table>
+        <button type="submit" style="margin-top:10px">Dispatch transfer</button>
     </form>
 }
 else

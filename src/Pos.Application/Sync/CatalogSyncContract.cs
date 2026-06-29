@@ -17,4 +17,5 @@ public sealed record CatalogItemDto(
     string TaxClass,
     string UnitOfMeasure,
     string? Barcode,
-    bool IsActive);
+    bool IsActive,
+    string? CategoryName = null);

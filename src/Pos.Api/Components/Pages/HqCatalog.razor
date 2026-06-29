@@ -7,6 +7,10 @@
 
 @if (!string.IsNullOrEmpty(Error)) { <p class="error">@Error</p> }
 
+<datalist id="catalog-categories">
+    @foreach (var c in _categories) { <option value="@c"></option> }
+</datalist>
+
 <form method="post" action="/backoffice/catalog" class="card" style="margin-bottom:14px; display:flex; gap:8px; flex-wrap:wrap; align-items:end">
     <Csrf />
     <label>SKU<br /><input name="sku" required /></label>
@@ -14,6 +18,7 @@
     <label>Price<br /><input name="priceAmount" type="number" step="0.01" min="0" required style="width:90px" /></label>
     <label>Unit<br /><select name="unit">@foreach (var u in Enum.GetNames<Pos.Domain.Catalog.UnitOfMeasure>()) { <option>@u</option> }</select></label>
     <label>Tax<br /><select name="taxClass">@foreach (var t in Enum.GetNames<Pos.Domain.Catalog.TaxClass>()) { <option>@t</option> }</select></label>
+    <label>Category<br /><input name="categoryName" list="catalog-categories" placeholder="Uncategorized" /></label>
     <label>Barcode<br /><input name="barcode" /></label>
     <button type="submit">Add item</button>
 </form>
@@ -21,13 +26,14 @@
 @if (_items is not null)
 {
     <table>
-        <thead><tr><th>SKU</th><th>Name</th><th>Unit</th><th>Tax</th><th style="text-align:right">Price</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>SKU</th><th>Name</th><th>Category</th><th>Unit</th><th>Tax</th><th style="text-align:right">Price</th><th>Status</th><th></th></tr></thead>
         <tbody>
             @foreach (var i in _items)
             {
                 <tr style="@(i.IsActive ? "" : "opacity:.55")">
                     <td>@i.Sku</td>
                     <td>@i.Name</td>
+                    <td>@(string.IsNullOrEmpty(i.CategoryName) ? "—" : i.CategoryName)</td>
                     <td>@i.UnitOfMeasure</td>
                     <td>@i.TaxClass</td>
                     <td style="text-align:right">
@@ -38,7 +44,19 @@
                         </form>
                     </td>
                     <td>@(i.IsActive ? "Active" : "Inactive")</td>
-                    <td>
+                    <td style="white-space:nowrap">
+                        <details>
+                            <summary style="cursor:pointer">Edit</summary>
+                            <form method="post" action="/backoffice/catalog/@i.Id" class="card" style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap; align-items:end">
+                                <Csrf />
+                                <label>Name<br /><input name="name" value="@i.Name" required /></label>
+                                <label>Barcode<br /><input name="barcode" value="@i.Barcode" /></label>
+                                <label>Unit<br /><select name="unit">@foreach (var u in Enum.GetNames<Pos.Domain.Catalog.UnitOfMeasure>()) { <option selected="@(i.UnitOfMeasure.ToString() == u)">@u</option> }</select></label>
+                                <label>Tax<br /><select name="taxClass">@foreach (var t in Enum.GetNames<Pos.Domain.Catalog.TaxClass>()) { <option selected="@(i.TaxClass.ToString() == t)">@t</option> }</select></label>
+                                <label>Category<br /><input name="categoryName" list="catalog-categories" value="@i.CategoryName" placeholder="Uncategorized" /></label>
+                                <button type="submit">Save</button>
+                            </form>
+                        </details>
                         <form method="post" action="/backoffice/catalog/@i.Id/active" style="display:inline">
                             <Csrf />
                             <input type="hidden" name="active" value="@((!i.IsActive).ToString().ToLowerInvariant())" />
@@ -47,7 +65,7 @@
                     </td>
                 </tr>
             }
-            @if (_items.Count == 0) { <tr><td colspan="7" style="color:var(--muted)">No catalogue items yet.</td></tr> }
+            @if (_items.Count == 0) { <tr><td colspan="8" style="color:var(--muted)">No catalogue items yet.</td></tr> }
         </tbody>
     </table>
 }
@@ -55,8 +73,14 @@
 @code {
     [SupplyParameterFromQuery] public string? Error { get; set; }
     private IReadOnlyList<Pos.Domain.Catalog.CatalogItem>? _items;
+    private IReadOnlyList<string> _categories = [];
 
-    protected override async Task OnInitializedAsync() => _items = await Catalog.ListAsync(includeInactive: true);
+    protected override async Task OnInitializedAsync()
+    {
+        _items = await Catalog.ListAsync(includeInactive: true);
+        _categories = _items.Select(i => i.CategoryName).Where(n => !string.IsNullOrWhiteSpace(n))
+            .Select(n => n!).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(n => n).ToList();
+    }
 
     private static string Money(decimal d) => d.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
 }

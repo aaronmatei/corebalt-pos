@@ -16,6 +16,7 @@ internal sealed class CatalogItemConfiguration : IEntityTypeConfiguration<Catalo
         b.Property(c => c.Sku).HasColumnName("sku").HasMaxLength(64).IsRequired();
         b.Property(c => c.Name).HasColumnName("name").HasMaxLength(200).IsRequired();
         b.Property(c => c.Barcode).HasColumnName("barcode").HasMaxLength(64);
+        b.Property(c => c.CategoryName).HasColumnName("category_name").HasMaxLength(128);
         b.Property(c => c.UnitOfMeasure).HasColumnName("unit_of_measure").HasConversion<int>();
         b.Property(c => c.TaxClass).HasColumnName("tax_class").HasConversion<int>();
         b.Property(c => c.IsActive).HasColumnName("is_active");
@@ -48,6 +49,7 @@ internal sealed class CatalogChangeConfiguration : IEntityTypeConfiguration<Cata
         b.Property(c => c.TaxClass).HasColumnName("tax_class").HasMaxLength(16).IsRequired();
         b.Property(c => c.UnitOfMeasure).HasColumnName("unit_of_measure").HasMaxLength(16).IsRequired();
         b.Property(c => c.Barcode).HasColumnName("barcode").HasMaxLength(64);
+        b.Property(c => c.CategoryName).HasColumnName("category_name").HasMaxLength(128);
         b.Property(c => c.IsActive).HasColumnName("is_active");
         b.Property(c => c.ChangedAtUtc).HasColumnName("changed_at_utc").HasColumnType("timestamptz");
         b.HasIndex(c => new { c.TenantId, c.Seq }).HasDatabaseName("ix_catalog_changes_tenant_seq");

@@ -1,0 +1,86 @@
+@page "/incoming-transfers"
+@attribute [Authorize(Policy = "BackOfficeManager")]
+@inject Pos.Application.Inventory.TransferReceivingService Receiving
+
+<h1>Incoming transfers</h1>
+<p style="color:var(--muted)">Stock sent from another branch. Count what physically arrived and confirm — the counted quantity is what's added to this branch's stock.</p>
+
+@if (!string.IsNullOrEmpty(Error)) { <p class="error">@Error</p> }
+
+@if (_pending is { Count: > 0 })
+{
+    @foreach (var t in _pending)
+    {
+        <form method="post" action="/backoffice/transfers/receive" class="card" style="margin-bottom:14px">
+            <Csrf />
+            <input type="hidden" name="transferId" value="@t.Id" />
+            <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px">
+                <strong>From @t.FromStoreName</strong>
+                <span style="color:var(--muted)">@t.DispatchedAtUtc.ToString("yyyy-MM-dd HH:mm") UTC · by @t.DispatchedByName</span>
+            </div>
+            @if (!string.IsNullOrEmpty(t.Note)) { <p style="color:var(--muted); margin:4px 0">Note: @t.Note</p> }
+            <table style="margin-top:8px">
+                <thead><tr><th>SKU</th><th>Product</th><th style="text-align:right">Sent</th><th style="text-align:right">Counted</th></tr></thead>
+                <tbody>
+                    @foreach (var l in t.Lines)
+                    {
+                        <tr>
+                            <td>@l.Sku</td>
+                            <td>@l.Name</td>
+                            <td style="text-align:right">@l.ExpectedQuantity.ToString("0.###")</td>
+                            <td style="text-align:right">
+                                <input name="recv_@l.Id" type="number" step="0.001" min="0"
+                                       value="@l.ExpectedQuantity.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)"
+                                       style="width:90px" />
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <p style="color:var(--muted); margin:6px 0">Adjust a count only if it doesn't match what was sent — a difference is recorded as a discrepancy.</p>
+            <button type="submit" style="margin-top:6px">Confirm receipt</button>
+        </form>
+    }
+}
+else
+{
+    <p class="card" style="color:var(--muted)">Nothing waiting to be received. Transfers sent to this branch appear here after the next sync.</p>
+}
+
+@if (_recent is { Count: > 0 })
+{
+    <h2 style="margin-top:24px">Recently received</h2>
+    <table>
+        <thead><tr><th>Received (UTC)</th><th>From</th><th>By</th><th>Items</th><th>Discrepancy</th></tr></thead>
+        <tbody>
+            @foreach (var t in _recent.Where(x => x.Status == Pos.Domain.Inventory.IncomingTransferStatus.Received))
+            {
+                <tr>
+                    <td>@(t.ReceivedAtUtc?.ToString("yyyy-MM-dd HH:mm"))</td>
+                    <td>@t.FromStoreName</td>
+                    <td>@t.ReceivedByName</td>
+                    <td>@t.Lines.Count (@string.Join(", ", t.Lines.Select(l => $"{l.ReceivedQuantity:0.###}×{l.Sku}")))</td>
+                    <td>
+                        @if (t.HasDiscrepancy)
+                        {
+                            <span class="error">@string.Join(", ", t.Lines.Where(l => l.Discrepancy is { } d && d != 0m).Select(l => $"{l.Sku} {l.Discrepancy:+0.###;-0.###}"))</span>
+                        }
+                        else { <span style="color:var(--muted)">—</span> }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    [SupplyParameterFromQuery] public string? Error { get; set; }
+    private IReadOnlyList<Pos.Domain.Inventory.IncomingTransfer>? _pending;
+    private IReadOnlyList<Pos.Domain.Inventory.IncomingTransfer>? _recent;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _pending = await Receiving.ListPendingAsync();
+        _recent = await Receiving.ListRecentAsync(50);
+    }
+}

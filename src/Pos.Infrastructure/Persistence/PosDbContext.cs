@@ -35,7 +35,7 @@ public sealed class PosDbContext : DbContext, IUnitOfWork
     public DbSet<Pos.Domain.Notifications.Notification> Notifications => Set<Pos.Domain.Notifications.Notification>();
     public DbSet<StockMovement> StockMovements => Set<StockMovement>();
     public DbSet<StockTransfer> StockTransfers => Set<StockTransfer>(); // M3 inter-branch transfers
-    public DbSet<ReceivedTransfer> ReceivedTransfers => Set<ReceivedTransfer>(); // dest dedup of applied transfers
+    public DbSet<IncomingTransfer> IncomingTransfers => Set<IncomingTransfer>(); // dest-side pending/received transfers (M3)
     public DbSet<MpesaPayment> MpesaPayments => Set<MpesaPayment>();
     public DbSet<CreditNote> CreditNotes => Set<CreditNote>();
     public DbSet<User> Users => Set<User>();

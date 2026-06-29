@@ -19,6 +19,7 @@ public sealed class CatalogChange
     public string TaxClass { get; private set; } = string.Empty;
     public string UnitOfMeasure { get; private set; } = string.Empty;
     public string? Barcode { get; private set; }
+    public string? CategoryName { get; private set; }
     public bool IsActive { get; private set; }
     public DateTimeOffset ChangedAtUtc { get; private set; }
 
@@ -35,6 +36,7 @@ public sealed class CatalogChange
         TaxClass = item.TaxClass.ToString(),
         UnitOfMeasure = item.UnitOfMeasure.ToString(),
         Barcode = item.Barcode,
+        CategoryName = item.CategoryName,
         IsActive = item.IsActive,
         ChangedAtUtc = now,
     };

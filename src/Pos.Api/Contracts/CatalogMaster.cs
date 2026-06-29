@@ -10,13 +10,15 @@ public sealed record CreateCatalogItemRequest(
     string PriceCurrency,
     UnitOfMeasure UnitOfMeasure = UnitOfMeasure.Each,
     string? Barcode = null,
-    TaxClass TaxClass = TaxClass.StandardRated);
+    TaxClass TaxClass = TaxClass.StandardRated,
+    string? CategoryName = null);
 
 public sealed record UpdateCatalogItemRequest(
     string Name,
     string? Barcode,
     UnitOfMeasure UnitOfMeasure,
-    TaxClass TaxClass);
+    TaxClass TaxClass,
+    string? CategoryName = null);
 
 public sealed record SetCatalogActiveRequest(bool Active);
 
@@ -29,4 +31,5 @@ public sealed record CatalogItemResponse(
     TaxClass TaxClass,
     string? Barcode,
     bool IsActive,
-    DateTimeOffset UpdatedAtUtc);
+    DateTimeOffset UpdatedAtUtc,
+    string? CategoryName = null);

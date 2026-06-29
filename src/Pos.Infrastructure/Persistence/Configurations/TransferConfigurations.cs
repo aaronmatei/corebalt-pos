@@ -41,17 +41,40 @@ internal sealed class StockTransferConfiguration : IEntityTypeConfiguration<Stoc
     }
 }
 
-internal sealed class ReceivedTransferConfiguration : IEntityTypeConfiguration<ReceivedTransfer>
+internal sealed class IncomingTransferConfiguration : IEntityTypeConfiguration<IncomingTransfer>
 {
-    public void Configure(EntityTypeBuilder<ReceivedTransfer> b)
+    public void Configure(EntityTypeBuilder<IncomingTransfer> b)
     {
-        b.ToTable("received_transfers");
-        b.HasKey(r => r.Id);
-        b.Property(r => r.Id).HasColumnName("id").ValueGeneratedNever();
-        b.Property(r => r.TenantId).HasColumnName("tenant_id").IsRequired();
-        b.Property(r => r.StoreId).HasColumnName("store_id").IsRequired();
-        b.Property(r => r.TransferId).HasColumnName("transfer_id").IsRequired();
-        b.Property(r => r.AppliedAtUtc).HasColumnName("applied_at_utc").HasColumnType("timestamptz");
-        b.HasIndex(r => new { r.TenantId, r.StoreId, r.TransferId }).IsUnique().HasDatabaseName("ux_received_transfers");
+        b.ToTable("incoming_transfers");
+        b.HasKey(t => t.Id);
+        b.Property(t => t.Id).HasColumnName("id").ValueGeneratedNever();   // id == the transfer id (stable across branches)
+        b.Property(t => t.TenantId).HasColumnName("tenant_id").IsRequired();
+        b.Property(t => t.StoreId).HasColumnName("store_id").IsRequired(); // the destination store
+        b.Property(t => t.FromStoreId).HasColumnName("from_store_id").IsRequired();
+        b.Property(t => t.FromStoreName).HasColumnName("from_store_name").HasMaxLength(128);
+        b.Property(t => t.DispatchedByName).HasColumnName("dispatched_by_name").HasMaxLength(128);
+        b.Property(t => t.DispatchedAtUtc).HasColumnName("dispatched_at_utc").HasColumnType("timestamptz");
+        b.Property(t => t.Note).HasColumnName("note").HasMaxLength(256);
+        b.Property(t => t.Status).HasColumnName("status").HasConversion<int>();
+        b.Property(t => t.ReceivedAtUtc).HasColumnName("received_at_utc").HasColumnType("timestamptz");
+        b.Property(t => t.ReceivedByName).HasColumnName("received_by_name").HasMaxLength(128);
+
+        b.OwnsMany<IncomingTransferLine>("_lines", lines =>
+        {
+            lines.ToTable("incoming_transfer_lines");
+            lines.WithOwner().HasForeignKey("incoming_transfer_id");
+            lines.Property(x => x.Id).HasColumnName("id").ValueGeneratedNever();
+            lines.HasKey("incoming_transfer_id", "Id");
+            lines.Property(x => x.Sku).HasColumnName("sku").HasMaxLength(64);
+            lines.Property(x => x.Name).HasColumnName("name").HasMaxLength(200);
+            lines.Property(x => x.ExpectedQuantity).HasColumnName("expected_quantity").HasColumnType("numeric(18,3)");
+            lines.Property(x => x.ReceivedQuantity).HasColumnName("received_quantity").HasColumnType("numeric(18,3)");
+            lines.Ignore(x => x.Discrepancy);
+        });
+        b.Navigation("_lines").UsePropertyAccessMode(PropertyAccessMode.Field);
+        b.Ignore(t => t.Lines);
+        b.Ignore(t => t.HasDiscrepancy);
+
+        b.HasIndex(t => new { t.TenantId, t.StoreId, t.Status }).HasDatabaseName("ix_incoming_transfers_tenant_store_status");
     }
 }

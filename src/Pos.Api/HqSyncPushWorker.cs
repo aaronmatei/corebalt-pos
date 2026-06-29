@@ -32,8 +32,8 @@ public sealed class HqSyncPushWorker : BackgroundService
                 await scope.ServiceProvider.GetRequiredService<HqSyncPusher>().RunOnceAsync(stoppingToken);
                 // …pull HQ catalogue changes down (M2)…
                 await scope.ServiceProvider.GetRequiredService<HqCatalogPuller>().RunOnceAsync(stoppingToken);
-                // …and receive any inter-branch transfers routed to us (M3).
-                await scope.ServiceProvider.GetRequiredService<HqTransferReceiver>().RunOnceAsync(stoppingToken);
+                // …and stage any inter-branch transfers routed to us (M3); an operator confirms the count to apply them.
+                await scope.ServiceProvider.GetRequiredService<IncomingTransferPuller>().RunOnceAsync(stoppingToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
