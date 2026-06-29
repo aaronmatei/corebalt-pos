@@ -197,3 +197,13 @@ Restore (destructive): `deploy/cloud/restore.sh <pos-*.dump> <dpkeys-*.tar.gz>`.
    `/hq/tls-check` AND confirming `chk <erp-host>` returns ALLOW — otherwise the ERP silently loses
    new-cert issuance.
 5. **Port 80 may be firewalled** at the provider; that's fine — Caddy falls back to TLS-ALPN-01 on 443.
+6. **Don't keep a per-tenant EXPLICIT Caddy block once `*.pos` on-demand is enabled.** A host that matches
+   BOTH an explicit `acme.pos.corebalt.co.ke { … }` block AND the `*.pos` on-demand block gets two
+   conflicting TLS automation policies and its handshake wedges (TLS internal error) — even though the
+   cert is on disk. Tenants with NO explicit block (served purely by `*.pos` on-demand) work fine. Fix:
+   delete the explicit per-tenant blocks, keep only the `pos.corebalt.co.ke` apex + the `*.pos` wildcard,
+   `docker restart erp-caddy-1`. (We hit this on `acme` after it had been added explicitly during early
+   debugging; `globex` — wildcard-only — was unaffected.)
+7. **`cloud-api-1` is multi-homed** (cloud_default + erp_default); Docker's embedded DNS can occasionally
+   return "server misbehaving" resolving it from erp-caddy. If it recurs, give it a stable alias on
+   erp_default (`aliases: [pos-api]` in the override) and point Caddy's `reverse_proxy`/`ask` at `pos-api`.
