@@ -3,8 +3,11 @@ using FluentAssertions;
 using Pos.Application.Cash;
 using Pos.Application.Catalog;
 using Pos.Application.Identity;
+using Pos.Application.Inventory;
 using Pos.Application.Sales;
 using Pos.Application.Sync;
+using Pos.Application.Tenancy;
+using Pos.Domain.Tenancy;
 using Pos.Domain.Catalog;
 using Pos.Domain.Cash;
 using Pos.Domain.Cash.Events;
@@ -48,7 +51,7 @@ public sealed class HqSyncPusherTests
         var outbox = new FakeOutbox(change);
         var sales = new FakeSales(sale);
         var client = new FakeClient(acceptAll: true);
-        var pusher = new HqSyncPusher(outbox, sales, new FakeSessions(), new FakeCreditNotes(), new FakeProducts(), client,
+        var pusher = new HqSyncPusher(outbox, sales, new FakeSessions(), new FakeCreditNotes(), new FakeProducts(), new FakeTransfers(), new FakeMerchants(), client,
             new StoreServerOptions { TenantId = tenant, StoreId = store },
             new HqSyncOptions { Enabled = true, TenantSlug = "acme", BatchSize = 100 });
 
@@ -85,7 +88,7 @@ public sealed class HqSyncPusherTests
             "{}", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
 
         var client = new FakeClient(acceptAll: true);
-        var pusher = new HqSyncPusher(new FakeOutbox(change), new FakeSales(), new FakeSessions(session), new FakeCreditNotes(), new FakeProducts(), client,
+        var pusher = new HqSyncPusher(new FakeOutbox(change), new FakeSales(), new FakeSessions(session), new FakeCreditNotes(), new FakeProducts(), new FakeTransfers(), new FakeMerchants(), client,
             new StoreServerOptions { TenantId = tenant, StoreId = store },
             new HqSyncOptions { Enabled = true, TenantSlug = "acme", BatchSize = 100 });
 
@@ -117,7 +120,7 @@ public sealed class HqSyncPusherTests
             typeof(Pos.Domain.Inventory.Events.StockMovementRecorded).FullName!, payload, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
 
         var client = new FakeClient(acceptAll: true);
-        var pusher = new HqSyncPusher(new FakeOutbox(change), new FakeSales(), new FakeSessions(), new FakeCreditNotes(), new FakeProducts(), client,
+        var pusher = new HqSyncPusher(new FakeOutbox(change), new FakeSales(), new FakeSessions(), new FakeCreditNotes(), new FakeProducts(), new FakeTransfers(), new FakeMerchants(), client,
             new StoreServerOptions { TenantId = tenant, StoreId = store },
             new HqSyncOptions { Enabled = true, TenantSlug = "acme", BatchSize = 100 });
 
@@ -134,7 +137,7 @@ public sealed class HqSyncPusherTests
     public async Task Does_nothing_when_disabled()
     {
         var outbox = new FakeOutbox();
-        var pusher = new HqSyncPusher(outbox, new FakeSales(), new FakeSessions(), new FakeCreditNotes(), new FakeProducts(), new FakeClient(true),
+        var pusher = new HqSyncPusher(outbox, new FakeSales(), new FakeSessions(), new FakeCreditNotes(), new FakeProducts(), new FakeTransfers(), new FakeMerchants(), new FakeClient(true),
             new StoreServerOptions { TenantId = Uuid7.NewGuid(), StoreId = Uuid7.NewGuid() },
             new HqSyncOptions { Enabled = false });
 
@@ -217,6 +220,20 @@ public sealed class HqSyncPusherTests
             Task.FromResult<IReadOnlyDictionary<Guid, Guid?>>(new Dictionary<Guid, Guid?>());
         public Task<bool> SkuExistsAsync(Guid t, string sku, Guid? ex = null, CancellationToken ct = default) => Task.FromResult(false);
         public Task<bool> BarcodeExistsAsync(Guid t, string bc, Guid? ex = null, CancellationToken ct = default) => Task.FromResult(false);
+    }
+
+    private sealed class FakeTransfers : ITransferRepository
+    {
+        public Task AddAsync(StockTransfer t, CancellationToken ct = default) => Task.CompletedTask;
+        public Task<StockTransfer?> GetAsync(Guid t, Guid s, Guid id, CancellationToken ct = default) => Task.FromResult<StockTransfer?>(null);
+        public Task<IReadOnlyList<StockTransfer>> ListRecentAsync(Guid t, Guid s, int take, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<StockTransfer>>([]);
+    }
+
+    private sealed class FakeMerchants : IMerchantProfileRepository
+    {
+        public Task<MerchantProfile?> GetAsync(Guid t, CancellationToken ct = default) => Task.FromResult<MerchantProfile?>(null);
+        public Task AddAsync(MerchantProfile p, CancellationToken ct = default) => Task.CompletedTask;
     }
 
     private sealed class FakeClient(bool acceptAll) : IHqSyncClient

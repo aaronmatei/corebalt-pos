@@ -55,6 +55,7 @@ public static class DependencyInjection
         services.AddScoped<ISaleRepository, SaleRepository>();
         services.AddScoped<ICreditNoteRepository, CreditNoteRepository>();
         services.AddScoped<IStockMovementRepository, StockMovementRepository>();
+        services.AddScoped<ITransferRepository, TransferRepository>(); // M3 inter-branch transfers
         services.AddScoped<IProductRepository, ProductRepository>();
         services.AddScoped<ICategoryRepository, CategoryRepository>();
         // HQ catalogue master + change feed (M2).
@@ -72,6 +73,7 @@ public static class DependencyInjection
         services.AddScoped<Pos.Application.Sync.IOutboxSyncStore, Pos.Infrastructure.Sync.OutboxSyncStore>();
         // HQ/cloud (Hq mode): durably ingest + project pushed store changes into the sync_inbox + hq_sales.
         services.AddScoped<Pos.Application.Sync.IHqSyncIngestService, Pos.Infrastructure.Sync.HqSyncIngestService>();
+        services.AddScoped<Pos.Application.Sync.IHqTransferStore, Pos.Infrastructure.Sync.HqTransferStore>(); // M3 routing
         // On-prem (StoreServer mode) store→cloud push. Default (disabled) options so the client can
         // construct; the API host rebinds HqSyncOptions from config (last registration wins).
         services.AddSingleton(new Pos.Application.Sync.HqSyncOptions());
@@ -85,6 +87,10 @@ public static class DependencyInjection
         services.AddSingleton<Pos.Application.Sync.ICatalogPullClient, Pos.Infrastructure.Sync.HqCatalogPullHttpClient>();
         services.AddScoped<Pos.Application.Sync.HqCatalogPuller>();
         services.AddScoped<Pos.Infrastructure.Sync.HqSalesReadStore>();
+        // M3 destination receiver: dedup repo, HTTP pull/ack client, receiver.
+        services.AddScoped<IReceivedTransferRepository, Pos.Infrastructure.Persistence.Repositories.ReceivedTransferRepository>();
+        services.AddSingleton<Pos.Application.Sync.IHqTransferPullClient, Pos.Infrastructure.Sync.HqTransferPullHttpClient>();
+        services.AddScoped<Pos.Application.Sync.HqTransferReceiver>();
         services.AddScoped<Pos.Application.Sync.IHqSalesReadStore>(sp => sp.GetRequiredService<Pos.Infrastructure.Sync.HqSalesReadStore>());
         services.AddScoped<Pos.Application.Sync.IHqSessionsReadStore>(sp => sp.GetRequiredService<Pos.Infrastructure.Sync.HqSalesReadStore>());
         services.AddScoped<Pos.Application.Sync.IHqCreditNotesReadStore>(sp => sp.GetRequiredService<Pos.Infrastructure.Sync.HqSalesReadStore>());

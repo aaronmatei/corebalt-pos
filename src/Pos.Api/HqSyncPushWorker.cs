@@ -30,8 +30,10 @@ public sealed class HqSyncPushWorker : BackgroundService
                 using var scope = _scopes.CreateScope();
                 // Push our outbox up…
                 await scope.ServiceProvider.GetRequiredService<HqSyncPusher>().RunOnceAsync(stoppingToken);
-                // …then pull HQ catalogue changes down (M2).
+                // …pull HQ catalogue changes down (M2)…
                 await scope.ServiceProvider.GetRequiredService<HqCatalogPuller>().RunOnceAsync(stoppingToken);
+                // …and receive any inter-branch transfers routed to us (M3).
+                await scope.ServiceProvider.GetRequiredService<HqTransferReceiver>().RunOnceAsync(stoppingToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

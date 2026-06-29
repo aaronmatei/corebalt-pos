@@ -94,6 +94,7 @@ builder.Services.AddScoped<Pos.Application.Customers.CustomerService>();
 builder.Services.AddSingleton(builder.Configuration.GetSection("Loyalty").Get<Pos.Application.Customers.LoyaltyOptions>()
     ?? new Pos.Application.Customers.LoyaltyOptions());
 builder.Services.AddScoped<Pos.Application.Inventory.StockService>();
+builder.Services.AddScoped<Pos.Application.Inventory.TransferService>(); // M3 dispatch
 builder.Services.AddScoped<Pos.Application.Inventory.LowStockService>();
 // Real-time: SignalR pushes new notifications to the back-office (overrides the no-op broadcaster from
 // AddInfrastructure — last registration wins). The browser connects with its auth cookie.
@@ -374,6 +375,7 @@ if (deployment.IsHq)
     app.MapAdmin();
     app.MapHqSync();      // store→cloud sync ingest (POST /hq/sync/ingest, sync-token auth)
     app.MapCatalogPull(); // HQ→store catalogue pull (GET /hq/catalog/changes, sync-token auth)
+    app.MapHqTransfers(); // M3 inter-branch transfer routing (incoming / received / branches)
     app.MapTlsCheck();    // on-demand-TLS `ask` for Caddy (GET /hq/tls-check?domain=)
 }
 

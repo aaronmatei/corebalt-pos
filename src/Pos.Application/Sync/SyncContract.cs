@@ -14,7 +14,8 @@ public static class SyncHeaders
 public sealed record SyncIngestRequest(
     string TenantSlug,
     Guid StoreId,
-    IReadOnlyList<SyncChangeDto> Changes);
+    IReadOnlyList<SyncChangeDto> Changes,
+    string? StoreName = null);   // M3: the store self-registers its branch name (for the HQ branch registry)
 
 /// <summary>
 /// One outbox change. <see cref="Id"/> is the original store-side outbox id and the idempotency key —
@@ -64,6 +65,20 @@ public sealed record SaleLineSnapshot(
     decimal VatAmount);
 
 public sealed record SaleTenderSnapshot(string Type, decimal Amount, string Status, string? Reference);
+
+/// <summary>A dispatched inter-branch transfer (M3), hydrated store-side so HQ can route it.</summary>
+public sealed record TransferSnapshot(
+    Guid TransferId,
+    Guid TenantId,
+    Guid FromStoreId,
+    Guid ToStoreId,
+    string ToStoreName,
+    string DispatchedByName,
+    DateTimeOffset DispatchedAtUtc,
+    string? Note,
+    IReadOnlyList<TransferLineSnapshot> Lines);
+
+public sealed record TransferLineSnapshot(Guid ProductId, string Sku, string Name, decimal Quantity);
 
 /// <summary>A return/refund (credit note), hydrated store-side for the cloud's returns view.</summary>
 public sealed record CreditNoteSnapshot(

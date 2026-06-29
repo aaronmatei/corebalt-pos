@@ -2,7 +2,9 @@ using System.Text.Json;
 using Pos.Application.Cash;
 using Pos.Application.Catalog;
 using Pos.Application.Identity;
+using Pos.Application.Inventory;
 using Pos.Application.Sales;
+using Pos.Application.Tenancy;
 using Pos.Domain.Cash.Events;
 using Pos.Domain.Inventory.Events;
 using Pos.Domain.Sales.Events;
@@ -24,6 +26,7 @@ public sealed class HqSyncPusher
     private static readonly string SessionClosedType = typeof(RegisterSessionClosed).FullName!;
     private static readonly string CreditNoteIssuedType = typeof(CreditNoteIssued).FullName!;
     private static readonly string StockMovementType = typeof(StockMovementRecorded).FullName!;
+    private static readonly string TransferDispatchedType = typeof(StockTransferDispatched).FullName!;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     private readonly IOutboxSyncStore _outbox;
@@ -31,19 +34,23 @@ public sealed class HqSyncPusher
     private readonly IRegisterSessionRepository _sessions;
     private readonly ICreditNoteRepository _creditNotes;
     private readonly IProductRepository _products;
+    private readonly ITransferRepository _transfers;
+    private readonly IMerchantProfileRepository _merchants;
     private readonly IHqSyncClient _client;
     private readonly StoreServerOptions _server;
     private readonly HqSyncOptions _options;
 
     public HqSyncPusher(IOutboxSyncStore outbox, ISaleRepository sales, IRegisterSessionRepository sessions,
-        ICreditNoteRepository creditNotes, IProductRepository products,
-        IHqSyncClient client, StoreServerOptions server, HqSyncOptions options)
+        ICreditNoteRepository creditNotes, IProductRepository products, ITransferRepository transfers,
+        IMerchantProfileRepository merchants, IHqSyncClient client, StoreServerOptions server, HqSyncOptions options)
     {
         _outbox = outbox;
         _sales = sales;
         _sessions = sessions;
         _creditNotes = creditNotes;
         _products = products;
+        _transfers = transfers;
+        _merchants = merchants;
         _client = client;
         _server = server;
         _options = options;
@@ -89,10 +96,17 @@ public sealed class HqSyncPusher
                     snapshot = JsonSerializer.Serialize(StockMovementSnapshotFactory.From(evt, product, c.OccurredAtUtc), Json);
                 }
             }
+            else if (c.EventType == TransferDispatchedType)
+            {
+                var transfer = await _transfers.GetAsync(tenant, store, c.AggregateId, ct);
+                if (transfer is not null) snapshot = JsonSerializer.Serialize(TransferSnapshotFactory.From(transfer), Json);
+            }
             dtos.Add(new SyncChangeDto(c.Id, c.AggregateId, c.EventType, c.OccurredAtUtc, c.EnqueuedAtUtc, c.Payload, snapshot));
         }
 
-        var response = await _client.PushAsync(new SyncIngestRequest(_options.TenantSlug, store, dtos), ct);
+        // The store self-registers its branch name (M3) so HQ can list it as a transfer destination.
+        var branchName = (await _merchants.GetAsync(tenant, ct)) is { } mp ? (mp.BranchFor(store)?.Name ?? mp.TradingName) : null;
+        var response = await _client.PushAsync(new SyncIngestRequest(_options.TenantSlug, store, dtos, branchName), ct);
 
         // Ack only what the cloud durably accepted; anything else stays unprocessed for the next pass.
         return await _outbox.AcknowledgeAsync(tenant, store, response.AcceptedIds ?? [], ct);

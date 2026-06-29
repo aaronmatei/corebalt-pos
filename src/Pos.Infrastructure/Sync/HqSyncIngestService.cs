@@ -23,6 +23,7 @@ internal sealed class HqSyncIngestService : IHqSyncIngestService
     private static readonly string SessionClosedType = typeof(RegisterSessionClosed).FullName!;
     private static readonly string CreditNoteIssuedType = typeof(CreditNoteIssued).FullName!;
     private static readonly string StockMovementType = typeof(StockMovementRecorded).FullName!;
+    private static readonly string TransferDispatchedType = typeof(StockTransferDispatched).FullName!;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     private readonly PosDbContext _db;
@@ -42,6 +43,15 @@ internal sealed class HqSyncIngestService : IHqSyncIngestService
         if (changes.Count == 0) return new SyncIngestResponse([]);
 
         var now = _clock.UtcNow;
+
+        // M3: keep the HQ branch registry fresh from the store's self-reported branch name.
+        if (!string.IsNullOrWhiteSpace(request.StoreName) && request.StoreId != Guid.Empty)
+        {
+            var branch = await _db.HqBranches.FirstOrDefaultAsync(x => x.TenantId == tenantId && x.StoreId == request.StoreId, ct);
+            if (branch is null) _db.HqBranches.Add(HqBranch.Create(tenantId, request.StoreId, request.StoreName!, now));
+            else branch.Seen(request.StoreName!, now);
+        }
+
         var ids = changes.Select(c => c.Id).ToList();
 
         // No tenant query filter on this path (token-authed, not principal-scoped), so scope every read by
@@ -73,6 +83,11 @@ internal sealed class HqSyncIngestService : IHqSyncIngestService
             : (await _db.HqStockOnHand.Where(s => s.TenantId == tenantId && productIds.Contains(s.ProductId)).ToListAsync(ct))
                 .ToDictionary(s => (s.StoreId, s.ProductId));
 
+        var transferIds = changes.Where(c => c.EventType == TransferDispatchedType).Select(c => c.AggregateId).Distinct().ToList();
+        var existingTransfers = transferIds.Count == 0
+            ? new Dictionary<Guid, HqTransfer>()
+            : await _db.HqTransfers.Where(t => t.TenantId == tenantId && transferIds.Contains(t.Id)).ToDictionaryAsync(t => t.Id, ct);
+
         var accepted = new List<Guid>(changes.Count);
         foreach (var change in changes)
         {
@@ -88,6 +103,7 @@ internal sealed class HqSyncIngestService : IHqSyncIngestService
                 _ when change.EventType == SessionClosedType => ProjectSession(tenantId, change, existingSessions, now),
                 _ when change.EventType == CreditNoteIssuedType => ProjectCreditNote(tenantId, change, existingNotes, now),
                 _ when change.EventType == StockMovementType => ProjectStock(tenantId, change, existingStock, now),
+                _ when change.EventType == TransferDispatchedType => ProjectTransfer(tenantId, change, existingTransfers, now),
                 _ => false,
             };
             if (projected) entry.MarkProjected(now);
@@ -187,6 +203,24 @@ internal sealed class HqSyncIngestService : IHqSyncIngestService
             existing[key] = row;
         }
         row.AddDelta(snap.QuantityDelta, snap.Sku, snap.Name, snap.UnitOfMeasure, snap.OccurredAtUtc, now);
+        return true;
+    }
+
+    /// <summary>Route a dispatched inter-branch transfer into hq_transfers (M3). Idempotent on the transfer id.</summary>
+    private bool ProjectTransfer(Guid tenantId, SyncChangeDto change, Dictionary<Guid, HqTransfer> existing, DateTimeOffset now)
+    {
+        if (string.IsNullOrWhiteSpace(change.Snapshot)) return false;
+        TransferSnapshot? snap;
+        try { snap = JsonSerializer.Deserialize<TransferSnapshot>(change.Snapshot!, Json); }
+        catch (JsonException ex) { _log.LogWarning(ex, "hq.sync.project bad transfer snapshot for change {Id}", change.Id); return false; }
+        if (snap is null) return false;
+        if (existing.ContainsKey(snap.TransferId)) return true; // already routed
+
+        var linesJson = JsonSerializer.Serialize(snap.Lines, Json);
+        var transfer = HqTransfer.Create(snap.TransferId, tenantId, snap.FromStoreId, snap.ToStoreId, snap.ToStoreName,
+            snap.DispatchedByName, snap.DispatchedAtUtc, snap.Note, snap.Lines.Count, linesJson, now);
+        _db.HqTransfers.Add(transfer);
+        existing[snap.TransferId] = transfer;
         return true;
     }
 

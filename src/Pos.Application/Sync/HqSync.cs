@@ -68,6 +68,14 @@ public static class CreditNoteSnapshotFactory
         c.GrandTotal.Amount, c.Currency, c.Lines.Count, c.CreatedAtUtc);
 }
 
+/// <summary>Maps a dispatched <see cref="StockTransfer"/> to the wire snapshot HQ routes (M3).</summary>
+public static class TransferSnapshotFactory
+{
+    public static TransferSnapshot From(StockTransfer t) => new(
+        t.Id, t.TenantId, t.FromStoreId, t.ToStoreId, t.ToStoreName, t.DispatchedByName, t.DispatchedAtUtc, t.Note,
+        t.Lines.Select(l => new TransferLineSnapshot(l.ProductId, l.Sku, l.Name, l.Quantity)).ToList());
+}
+
 /// <summary>Builds a stock-movement snapshot from the outbox EVENT (no movement reload needed),
 /// enriched with the product's Sku/Name when known so the cloud view is readable.</summary>
 public static class StockMovementSnapshotFactory

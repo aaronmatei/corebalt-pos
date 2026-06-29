@@ -1,0 +1,69 @@
+@page "/transfers"
+@attribute [Authorize(Policy = "BackOfficeManager")]
+@inject Pos.Application.Inventory.TransferService TransferSvc
+@inject Pos.Application.Catalog.ProductService Products
+@inject Pos.Application.Sync.IHqTransferPullClient Hq
+
+<h1>Stock transfers</h1>
+<p style="color:var(--muted)">Send stock to another branch. The destination receives it on its next sync.</p>
+
+@if (!string.IsNullOrEmpty(Error)) { <p class="error">@Error</p> }
+
+@if (_branches is { Count: > 0 })
+{
+    <form method="post" action="/backoffice/transfers" class="card" style="margin-bottom:14px; display:flex; gap:8px; flex-wrap:wrap; align-items:end">
+        <Csrf />
+        <label>To branch<br />
+            <select name="destination" required>
+                <option value="">— choose —</option>
+                @foreach (var b in _branches) { <option value="@(b.StoreId)|@(b.Name)">@b.Name</option> }
+            </select>
+        </label>
+        <label>Product<br />
+            <select name="productId" required>
+                @foreach (var p in _products!) { <option value="@p.Id">@p.Sku — @p.Name</option> }
+            </select>
+        </label>
+        <label>Qty<br /><input name="quantity" type="number" step="0.001" min="0" required style="width:80px" /></label>
+        <label>Note<br /><input name="note" /></label>
+        <button type="submit">Dispatch</button>
+    </form>
+}
+else
+{
+    <p class="card" style="color:var(--muted)">No other branches are registered yet. Another branch must sync to HQ at least once before you can transfer to it.</p>
+}
+
+@if (_recent is not null)
+{
+    <table>
+        <thead><tr><th>Dispatched (UTC)</th><th>To</th><th>Items</th><th>By</th><th>Status</th></tr></thead>
+        <tbody>
+            @foreach (var t in _recent)
+            {
+                <tr>
+                    <td>@t.DispatchedAtUtc.ToString("yyyy-MM-dd HH:mm")</td>
+                    <td>@t.ToStoreName</td>
+                    <td>@t.Lines.Count (@string.Join(", ", t.Lines.Select(l => $"{l.Quantity:0.###}×{l.Sku}")))</td>
+                    <td>@t.DispatchedByName</td>
+                    <td>@t.Status</td>
+                </tr>
+            }
+            @if (_recent.Count == 0) { <tr><td colspan="5" style="color:var(--muted)">No transfers yet.</td></tr> }
+        </tbody>
+    </table>
+}
+
+@code {
+    [SupplyParameterFromQuery] public string? Error { get; set; }
+    private IReadOnlyList<Pos.Application.Sync.BranchDto>? _branches;
+    private IReadOnlyList<Pos.Domain.Catalog.Product>? _products;
+    private IReadOnlyList<Pos.Domain.Inventory.StockTransfer>? _recent;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _branches = await Hq.BranchesAsync();
+        _products = await Products.ListAsync(includeInactive: false);
+        _recent = await TransferSvc.ListRecentAsync(50);
+    }
+}

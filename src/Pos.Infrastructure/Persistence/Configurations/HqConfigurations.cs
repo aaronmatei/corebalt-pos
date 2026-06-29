@@ -121,3 +121,42 @@ internal sealed class HqStockOnHandConfiguration : IEntityTypeConfiguration<HqSt
         b.HasIndex(s => new { s.TenantId, s.StoreId, s.ProductId }).IsUnique().HasDatabaseName("ux_hq_stock_tenant_store_product");
     }
 }
+
+internal sealed class HqTransferConfiguration : IEntityTypeConfiguration<HqTransfer>
+{
+    public void Configure(EntityTypeBuilder<HqTransfer> b)
+    {
+        b.ToTable("hq_transfers");
+        b.HasKey(t => t.Id);
+        b.Property(t => t.Id).HasColumnName("id").ValueGeneratedNever(); // the original transfer id
+        b.Property(t => t.TenantId).HasColumnName("tenant_id").IsRequired();
+        b.Property(t => t.FromStoreId).HasColumnName("from_store_id").IsRequired();
+        b.Property(t => t.ToStoreId).HasColumnName("to_store_id").IsRequired();
+        b.Property(t => t.ToStoreName).HasColumnName("to_store_name").HasMaxLength(128);
+        b.Property(t => t.DispatchedByName).HasColumnName("dispatched_by_name").HasMaxLength(128);
+        b.Property(t => t.DispatchedAtUtc).HasColumnName("dispatched_at_utc").HasColumnType("timestamptz");
+        b.Property(t => t.IsReceived).HasColumnName("is_received");
+        b.Property(t => t.ReceivedAtUtc).HasColumnName("received_at_utc").HasColumnType("timestamptz");
+        b.Property(t => t.Note).HasColumnName("note").HasMaxLength(256);
+        b.Property(t => t.LineCount).HasColumnName("line_count");
+        b.Property(t => t.LinesJson).HasColumnName("lines").HasColumnType("jsonb").IsRequired();
+        b.Property(t => t.SyncedAtUtc).HasColumnName("synced_at_utc").HasColumnType("timestamptz");
+        // The destination's incoming-transfer query: undelivered transfers TO a store.
+        b.HasIndex(t => new { t.TenantId, t.ToStoreId, t.IsReceived }).HasDatabaseName("ix_hq_transfers_tenant_to_received");
+    }
+}
+
+internal sealed class HqBranchConfiguration : IEntityTypeConfiguration<HqBranch>
+{
+    public void Configure(EntityTypeBuilder<HqBranch> b)
+    {
+        b.ToTable("hq_branches");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Id).HasColumnName("id").ValueGeneratedNever();
+        b.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired();
+        b.Property(x => x.StoreId).HasColumnName("store_id").IsRequired();
+        b.Property(x => x.Name).HasColumnName("name").HasMaxLength(128).IsRequired();
+        b.Property(x => x.LastSeenAtUtc).HasColumnName("last_seen_at_utc").HasColumnType("timestamptz");
+        b.HasIndex(x => new { x.TenantId, x.StoreId }).IsUnique().HasDatabaseName("ux_hq_branches_tenant_store");
+    }
+}

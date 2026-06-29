@@ -34,6 +34,8 @@ public sealed class PosDbContext : DbContext, IUnitOfWork
     public DbSet<Pos.Domain.Customers.Customer> Customers => Set<Pos.Domain.Customers.Customer>();
     public DbSet<Pos.Domain.Notifications.Notification> Notifications => Set<Pos.Domain.Notifications.Notification>();
     public DbSet<StockMovement> StockMovements => Set<StockMovement>();
+    public DbSet<StockTransfer> StockTransfers => Set<StockTransfer>(); // M3 inter-branch transfers
+    public DbSet<ReceivedTransfer> ReceivedTransfers => Set<ReceivedTransfer>(); // dest dedup of applied transfers
     public DbSet<MpesaPayment> MpesaPayments => Set<MpesaPayment>();
     public DbSet<CreditNote> CreditNotes => Set<CreditNote>();
     public DbSet<User> Users => Set<User>();
@@ -55,6 +57,8 @@ public sealed class PosDbContext : DbContext, IUnitOfWork
     public DbSet<Pos.Domain.Hq.HqSession> HqSessions => Set<Pos.Domain.Hq.HqSession>();
     public DbSet<Pos.Domain.Hq.HqCreditNote> HqCreditNotes => Set<Pos.Domain.Hq.HqCreditNote>();
     public DbSet<Pos.Domain.Hq.HqStockOnHand> HqStockOnHand => Set<Pos.Domain.Hq.HqStockOnHand>();
+    public DbSet<Pos.Domain.Hq.HqTransfer> HqTransfers => Set<Pos.Domain.Hq.HqTransfer>();
+    public DbSet<Pos.Domain.Hq.HqBranch> HqBranches => Set<Pos.Domain.Hq.HqBranch>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

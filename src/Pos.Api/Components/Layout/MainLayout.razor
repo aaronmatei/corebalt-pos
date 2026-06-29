@@ -16,6 +16,10 @@
                     <NavLink href="/products" Match="NavLinkMatch.Prefix">Products</NavLink>
                     <NavLink href="/categories">Categories</NavLink>
                     <NavLink href="/stock">Stock</NavLink>
+                    @if (!Deployment.IsHq)
+                    {
+                        <NavLink href="/transfers">Transfers</NavLink>
+                    }
                     <NavLink href="/reorder">
                         Reorder
                         @* Always rendered (hidden at 0) so the SignalR client can update it live. *@

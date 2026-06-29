@@ -369,6 +369,24 @@ internal static class BackOfficeEndpoints
             return Results.Redirect("/hq/catalog");
         }).RequireAuthorization("BackOfficeManager");
 
+        // ── Inter-branch transfers (M3): dispatch from this branch ──
+        g.MapPost("/transfers", async (Pos.Application.Inventory.TransferService svc,
+            [FromForm] string destination, [FromForm] Guid productId, [FromForm] string? quantity,
+            [FromForm] string? note, CancellationToken ct) =>
+        {
+            try
+            {
+                var parts = (destination ?? "").Split('|', 2);
+                if (parts.Length < 1 || !Guid.TryParse(parts[0], out var toStoreId))
+                    return Back("/transfers", new ArgumentException("Choose a destination branch."));
+                var toName = parts.Length > 1 ? parts[1] : "";
+                await svc.DispatchAsync(toStoreId, toName,
+                    new[] { new Pos.Application.Inventory.TransferLineInput(productId, RequiredDecimal(quantity, "Quantity")) }, note, ct);
+                return Results.Redirect("/transfers");
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return Back("/transfers", ex); }
+        }).RequireAuthorization("BackOfficeManager");
+
         return app;
     }
 
